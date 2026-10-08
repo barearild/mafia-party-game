@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #0b0908;
+    color: #f4efe6;
+  }
+
+  h1, h2, h3, .font-serif-title {
+    font-family: 'Cinzel', Georgia, serif;
+  }
+}
+
+/* Vintage Desk & Art Deco Noir Backgrounds */
+.bg-noir-gradient {
+  background-color: #0b0908;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(198, 161, 91, 0.16) 0%, rgba(20, 15, 12, 0.94) 55%, #090706 100%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 2px,
+      transparent 2px,
+      transparent 16px
+    );
+}
+
+.bg-night-gradient {
+  background-color: #07090e;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(198, 161, 91, 0.12) 0%, rgba(12, 16, 24, 0.96) 60%, #06070a 100%);
+}
+
+.bg-day-gradient {
+  background-color: #120e0a;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(217, 119, 6, 0.2) 0%, rgba(24, 18, 13, 0.95) 60%, #0b0908 100%);
+}
+
+/* Art Deco Panel Frame */
+.deco-panel {
+  background: linear-gradient(180deg, rgba(24, 21, 18, 0.96) 0%, rgba(14, 12, 10, 0.98) 100%);
+  border: 1px solid rgba(198, 161, 91, 0.35);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(198, 161, 91, 0.12);
+}
+
+.deco-gold-btn {
+  background: linear-gradient(135deg, #d4af37 0%, #aa8010 50%, #c59b27 100%);
+  color: #120e07;
+  border: 1px solid #f3d87d;
+  box-shadow: 0 8px 25px rgba(212, 175, 55, 0.25);
+}
+.deco-gold-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e5c349 0%, #be921b 50%, #d4af37 100%);
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #12100e;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d3326;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c6a15b;
+}
+
+/* 3D Tarot Card Flip Animation */
+.card-perspective {
+  perspective: 1200px;
+}
+
+.card-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.card-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.card-face-front {
+  transform: rotateY(180deg);
+}
+
