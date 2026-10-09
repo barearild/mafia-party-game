@@ -527,6 +527,79 @@ export function RoleSettingsEditor({
     });
   };
 
+  if (!isEditable) {
+    return (
+      <div className="rounded-2xl deco-panel p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#c6a15b]/20 pb-3">
+          <div>
+            <h3 className="text-base font-serif-title font-bold uppercase tracking-wider text-[#f5efe2]">
+              Syndicate Role Deck
+            </h3>
+            <p className="text-xs text-stone-400">
+              Total Citizen Cards: {totalAssigned} / {Math.max(4, playerCount)} Citizens
+            </p>
+          </div>
+          <span className="text-[11px] font-serif-title uppercase tracking-wider text-stone-400 px-2.5 py-1 rounded-full bg-stone-900 border border-stone-800">
+            {settings.autoCustomRoles ? 'Auto-Balanced' : 'Custom Config'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {['GODFATHER', 'MAFIA', 'DOCTOR', 'DETECTIVE', 'VILLAGER'].map((roleKey) => {
+            const r = ROLES[roleKey];
+            const val = counts[roleKey] || 0;
+            if (val <= 0) return null;
+            return (
+              <div
+                key={roleKey}
+                className="flex items-center justify-between p-2 rounded-xl bg-stone-950/90 border border-[#c6a15b]/20"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={r.image}
+                    alt={r.name}
+                    className="w-9 h-11 rounded object-cover border border-[#c6a15b]/40 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-[#f5efe2] truncate">
+                      {r.name}
+                    </div>
+                    <div className="text-[10px] text-stone-400 truncate">
+                      {r.id === 'GODFATHER'
+                        ? 'Appears Innocent'
+                        : r.team === 'MAFIA'
+                        ? 'Mafia Syndicate'
+                        : 'Town Alliance'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-2.5 py-1 rounded-lg bg-stone-900 border border-[#c6a15b]/30 text-xs font-bold font-serif-title text-[#e5c365]">
+                  {val} {val === 1 ? 'Card' : 'Cards'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="pt-2 border-t border-[#c6a15b]/20 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-300">
+          <div>
+            Doctor Self-Save:{' '}
+            <strong className={settings.doctorSelfSave ? 'text-[#e5c365]' : 'text-stone-400'}>
+              {settings.doctorSelfSave ? 'Enabled' : 'Disabled'}
+            </strong>
+          </div>
+          <div>
+            Reveal on Elimination:{' '}
+            <strong className={settings.revealRoleOnDeath ? 'text-[#e5c365]' : 'text-stone-400'}>
+              {settings.revealRoleOnDeath ? 'Enabled' : 'Disabled'}
+            </strong>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl deco-panel p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#c6a15b]/20 pb-3">

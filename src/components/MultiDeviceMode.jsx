@@ -432,20 +432,20 @@ export default function MultiDeviceMode({
             </div>
 
             {/* Game Master Selection Card */}
-            <div className="rounded-2xl deco-panel p-5 sm:p-6 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#c6a15b]/20 pb-3.5">
-                <div>
-                  <h2 className="text-sm sm:text-base font-serif-title font-bold uppercase tracking-[0.16em] text-[#e5c365] flex items-center gap-2">
-                    <Wand2 className="w-4 h-4 text-[#c6a15b]" />
-                    Game Master (Narrator) Mode
-                  </h2>
-                  <p className="text-xs text-stone-300 mt-1">
-                    Choose whether the app runs everything automatically so everyone plays, or
-                    assign / randomly draw a player to be the all-seeing Game Master.
-                  </p>
-                </div>
+            {isHost ? (
+              <div className="rounded-2xl deco-panel p-5 sm:p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#c6a15b]/20 pb-3.5">
+                  <div>
+                    <h2 className="text-sm sm:text-base font-serif-title font-bold uppercase tracking-[0.16em] text-[#e5c365] flex items-center gap-2">
+                      <Wand2 className="w-4 h-4 text-[#c6a15b]" />
+                      Game Master (Narrator) Mode
+                    </h2>
+                    <p className="text-xs text-stone-300 mt-1">
+                      Choose whether the app runs everything automatically so everyone plays, or
+                      assign / randomly draw a player to be the all-seeing Game Master.
+                    </p>
+                  </div>
 
-                {isHost && (
                   <button
                     type="button"
                     onClick={() => socket.emit('draw_random_gm')}
@@ -454,104 +454,132 @@ export default function MultiDeviceMode({
                     <Dices className="w-4 h-4 text-[#c6a15b]" />
                     Draw Random GM Now
                   </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => updateGmSettings({ gmMode: 'NONE' })}
+                    className={`p-3.5 rounded-xl border text-left transition ${
+                      (!settings.gmMode || settings.gmMode === 'NONE')
+                        ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2] shadow-[0_0_20px_rgba(198,161,91,0.18)]'
+                        : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/50'
+                    }`}
+                  >
+                    <div className="font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#e5c365]">
+                      <Cpu className="w-4 h-4" />
+                      Automated App GM
+                    </div>
+                    <p className="text-xs text-stone-400 mt-1 leading-relaxed">
+                      Everyone in the lobby plays as a citizen! The app moderates automatically.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateGmSettings({
+                        gmMode: 'ASSIGNED',
+                        assignedGmPlayerId: settings.assignedGmPlayerId || hostId,
+                      })
+                    }
+                    className={`p-3.5 rounded-xl border text-left transition ${
+                      settings.gmMode === 'ASSIGNED'
+                        ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2] shadow-[0_0_20px_rgba(198,161,91,0.18)]'
+                        : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/50'
+                    }`}
+                  >
+                    <div className="font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#e5c365]">
+                      <UserCheck className="w-4 h-4" />
+                      Assign Specific Person
+                    </div>
+                    <p className="text-xs text-stone-400 mt-1 leading-relaxed">
+                      Pick a specific player in the lobby to receive the all-seeing Game Master
+                      screen.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateGmSettings({ gmMode: 'RANDOM' })}
+                    className={`p-3.5 rounded-xl border text-left transition ${
+                      settings.gmMode === 'RANDOM'
+                        ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2] shadow-[0_0_20px_rgba(198,161,91,0.18)]'
+                        : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/50'
+                    }`}
+                  >
+                    <div className="font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#e5c365]">
+                      <Dices className="w-4 h-4" />
+                      Draw Between Players
+                    </div>
+                    <p className="text-xs text-stone-400 mt-1 leading-relaxed">
+                      Randomly draws one human player to be the Game Master when the game starts.
+                    </p>
+                  </button>
+                </div>
+
+                {settings.gmMode === 'ASSIGNED' && (
+                  <div className="pt-3 border-t border-[#c6a15b]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-serif-title uppercase tracking-wider text-[#e5c365] font-bold">
+                      Selected Game Master:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {players.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() =>
+                            updateGmSettings({
+                              gmMode: 'ASSIGNED',
+                              assignedGmPlayerId: p.id,
+                            })
+                          }
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                            settings.assignedGmPlayerId === p.id
+                              ? 'deco-gold-btn font-serif-title uppercase tracking-wider'
+                              : 'bg-stone-900 text-stone-300 border-[#c6a15b]/25 hover:border-[#c6a15b]/60'
+                          }`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  disabled={!isHost}
-                  onClick={() => updateGmSettings({ gmMode: 'NONE' })}
-                  className={`p-3.5 rounded-xl border text-left transition ${
-                    (!settings.gmMode || settings.gmMode === 'NONE')
-                      ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2] shadow-[0_0_20px_rgba(198,161,91,0.18)]'
-                      : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/50'
-                  }`}
-                >
-                  <div className="font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#e5c365]">
-                    <Cpu className="w-4 h-4" />
-                    Automated App GM
+            ) : (
+              /* Non-Host View: Clean Game Master Status Banner */
+              <div className="rounded-2xl deco-panel p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#c6a15b]/15 border border-[#c6a15b]/40 flex items-center justify-center shrink-0">
+                    <Wand2 className="w-4 h-4 text-[#e5c365]" />
                   </div>
-                  <p className="text-xs text-stone-400 mt-1 leading-relaxed">
-                    Everyone in the lobby plays as a citizen! The app moderates automatically.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!isHost}
-                  onClick={() =>
-                    updateGmSettings({
-                      gmMode: 'ASSIGNED',
-                      assignedGmPlayerId: settings.assignedGmPlayerId || hostId,
-                    })
-                  }
-                  className={`p-3.5 rounded-xl border text-left transition ${
-                    settings.gmMode === 'ASSIGNED'
-                      ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2] shadow-[0_0_20px_rgba(198,161,91,0.18)]'
-                      : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/50'
-                  }`}
-                >
-                  <div className="font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#e5c365]">
-                    <UserCheck className="w-4 h-4" />
-                    Assign Specific Person
-                  </div>
-                  <p className="text-xs text-stone-400 mt-1 leading-relaxed">
-                    Pick a specific player in the lobby to receive the all-seeing Game Master
-                    screen.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!isHost}
-                  onClick={() => updateGmSettings({ gmMode: 'RANDOM' })}
-                  className={`p-3.5 rounded-xl border text-left transition ${
-                    settings.gmMode === 'RANDOM'
-                      ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2] shadow-[0_0_20px_rgba(198,161,91,0.18)]'
-                      : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/50'
-                  }`}
-                >
-                  <div className="font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 text-[#e5c365]">
-                    <Dices className="w-4 h-4" />
-                    Draw Between Players
-                  </div>
-                  <p className="text-xs text-stone-400 mt-1 leading-relaxed">
-                    Randomly draws one human player to be the Game Master when the game starts.
-                  </p>
-                </button>
-              </div>
-
-              {settings.gmMode === 'ASSIGNED' && (
-                <div className="pt-3 border-t border-[#c6a15b]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <span className="text-xs font-serif-title uppercase tracking-wider text-[#e5c365] font-bold">
-                    Selected Game Master:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {players.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        disabled={!isHost}
-                        onClick={() =>
-                          updateGmSettings({
-                            gmMode: 'ASSIGNED',
-                            assignedGmPlayerId: p.id,
-                          })
-                        }
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
-                          settings.assignedGmPlayerId === p.id
-                            ? 'deco-gold-btn font-serif-title uppercase tracking-wider'
-                            : 'bg-stone-900 text-stone-300 border-[#c6a15b]/25 hover:border-[#c6a15b]/60'
-                        }`}
-                      >
-                        {p.name}
-                      </button>
-                    ))}
+                  <div>
+                    <div className="text-xs font-serif-title uppercase tracking-wider text-[#e5c365] font-bold">
+                      Game Master (Narrator) Setup
+                    </div>
+                    <div className="text-xs text-stone-300">
+                      {(!settings.gmMode || settings.gmMode === 'NONE') &&
+                        'Automated App GM • Everyone plays as a citizen'}
+                      {settings.gmMode === 'ASSIGNED' && (
+                        <>
+                          Dedicated Game Master:{' '}
+                          <span className="font-bold text-[#f5efe2]">
+                            {players.find((p) => p.id === settings.assignedGmPlayerId)?.name ||
+                              'Host'}
+                          </span>
+                        </>
+                      )}
+                      {settings.gmMode === 'RANDOM' &&
+                        'Random Draw • A Game Master will be chosen at game start'}
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
+                <div className="text-[11px] font-serif-title uppercase tracking-wider text-stone-400 self-start sm:self-auto px-2.5 py-1 rounded-full bg-stone-900 border border-stone-800">
+                  Host Controls
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Connected Players */}
