@@ -19,9 +19,10 @@ const ROOM_PEER_PREFIX = 'mafia-room-v1-';
 const STORAGE_ROOM_KEY = 'mafia_host_room_state_v1';
 
 export class P2PNetworkManager {
-  constructor({ playerId, playerName, onStateUpdate, onError, onStatusChange }) {
+  constructor({ playerId, playerName, isTvDisplay, onStateUpdate, onError, onStatusChange }) {
     this.playerId = playerId;
     this.playerName = playerName;
+    this.isTvDisplay = Boolean(isTvDisplay);
     this.onStateUpdate = onStateUpdate;
     this.onError = onError;
     this.onStatusChange = onStatusChange || (() => {});
@@ -275,6 +276,7 @@ export class P2PNetworkManager {
           type: 'join_request',
           playerId: this.playerId,
           playerName: this.playerName,
+          isTvDisplay: this.isTvDisplay,
         });
       });
 
@@ -377,10 +379,21 @@ export class P2PNetworkManager {
           }
         }
 
+        const isTv = Boolean(data.isTvDisplay);
         if (existing) {
           existing.connected = true;
           if (data.playerName && this.room.phase === 'LOBBY') {
             existing.name = data.playerName.trim();
+          }
+          if (isTv) {
+            existing.isGameMaster = true;
+            existing.isTvDisplay = true;
+            existing.role = 'GAMEMASTER';
+            existing.ready = true;
+            this.room.gameMasterId = existing.id;
+            this.room.settings.gmMode = 'ASSIGNED';
+            this.room.settings.assignedGmPlayerId = existing.id;
+            syncRoleCountsIfAuto(this.room);
           }
         } else {
           if (this.room.phase !== 'LOBBY') {
@@ -393,14 +406,21 @@ export class P2PNetworkManager {
           }
           this.room.players.push({
             id: clientPlayerId,
-            name: (data.playerName || `Player ${this.room.players.length + 1}`).trim(),
+            name: (data.playerName || (isTv ? 'Living Room TV' : `Player ${this.room.players.length + 1}`)).trim(),
             isBot: false,
             connected: true,
             alive: true,
-            role: null,
-            ready: false,
+            role: isTv ? 'GAMEMASTER' : null,
+            isGameMaster: isTv,
+            isTvDisplay: isTv,
+            ready: isTv ? true : false,
             investigations: [],
           });
+          if (isTv) {
+            this.room.gameMasterId = clientPlayerId;
+            this.room.settings.gmMode = 'ASSIGNED';
+            this.room.settings.assignedGmPlayerId = clientPlayerId;
+          }
           syncRoleCountsIfAuto(this.room);
         }
 
@@ -493,10 +513,55 @@ export class P2PNetworkManager {
         break;
       }
 
+      case 'register_tv_gm': {
+        const player = room.players.find((p) => p.id === senderPlayerId);
+        if (player) {
+          player.isGameMaster = true;
+          player.isTvDisplay = true;
+          player.role = 'GAMEMASTER';
+          player.ready = true;
+          room.gameMasterId = player.id;
+          room.settings.gmMode = 'ASSIGNED';
+          room.settings.assignedGmPlayerId = player.id;
+          syncRoleCountsIfAuto(room);
+          this._saveHostRoomToStorage();
+          this._broadcastRoom();
+        }
+        break;
+      }
+
+      case 'exit_tv_to_player': {
+        const player = room.players.find((p) => p.id === senderPlayerId);
+        if (player) {
+          player.isGameMaster = false;
+          player.isTvDisplay = false;
+          if (payload?.playerName) {
+            player.name = payload.playerName.trim();
+          } else if (player.name === 'Living Room TV') {
+            player.name = 'Player';
+          }
+          if (room.phase === 'LOBBY') {
+            player.role = null;
+            player.ready = false;
+          }
+          if (room.gameMasterId === player.id) {
+            room.gameMasterId = null;
+          }
+          if (room.settings.assignedGmPlayerId === player.id) {
+            room.settings.gmMode = 'NONE';
+            room.settings.assignedGmPlayerId = null;
+          }
+          syncRoleCountsIfAuto(room);
+          this._saveHostRoomToStorage();
+          this._broadcastRoom();
+        }
+        break;
+      }
+
       case 'draw_random_gm': {
         if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
-        const humans = room.players.filter((p) => !p.isBot);
-        const pool = humans.length > 0 ? humans : room.players;
+        const humans = room.players.filter((p) => !p.isBot && !p.isTvDisplay);
+        const pool = humans.length > 0 ? humans : room.players.filter((p) => !p.isTvDisplay);
         const chosen = pool[Math.floor(Math.random() * pool.length)];
         if (chosen) {
           room.settings.gmMode = 'ASSIGNED';
@@ -525,18 +590,21 @@ export class P2PNetworkManager {
         if (room.settings.gmMode === 'ASSIGNED') {
           const targetGm =
             room.players.find((p) => p.id === room.settings.assignedGmPlayerId) ||
+            room.players.find((p) => p.isTvDisplay) ||
             room.players.find((p) => !p.isBot) ||
             room.players[0];
           room.gameMasterId = targetGm ? targetGm.id : null;
         } else if (room.settings.gmMode === 'RANDOM') {
-          const humans = room.players.filter((p) => !p.isBot);
-          const pool = humans.length > 0 ? humans : room.players;
+          const humans = room.players.filter((p) => !p.isBot && !p.isTvDisplay);
+          const pool = humans.length > 0 ? humans : room.players.filter((p) => !p.isTvDisplay);
           const drawn = pool[Math.floor(Math.random() * pool.length)];
           room.gameMasterId = drawn ? drawn.id : null;
         }
 
         syncRoleCountsIfAuto(room);
-        const citizenPlayers = room.players.filter((p) => p.id !== room.gameMasterId);
+        const citizenPlayers = room.players.filter(
+          (p) => p.id !== room.gameMasterId && !p.isGameMaster && p.role !== 'GAMEMASTER'
+        );
 
         const counts = room.settings.roleCounts;
         const rolePool = [];
@@ -559,10 +627,11 @@ export class P2PNetworkManager {
 
         let roleIdx = 0;
         room.players.forEach((p) => {
-          if (p.id === room.gameMasterId) {
+          if (p.id === room.gameMasterId || p.isGameMaster || p.role === 'GAMEMASTER') {
             p.role = 'GAMEMASTER';
+            p.isGameMaster = true;
             p.alive = true;
-            p.ready = p.isBot;
+            p.ready = true;
             p.investigations = [];
           } else {
             p.role = rolePool[roleIdx++];

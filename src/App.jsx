@@ -8,6 +8,7 @@ import {
   ArrowRight,
   RotateCcw,
   X,
+  Tv,
 } from 'lucide-react';
 import { ROLES } from './shared/roles.js';
 import { ArtDecoCardBack, RoleCard } from './components/RoleBadge.jsx';
@@ -104,6 +105,9 @@ function loadSavedNavState() {
       localStorage.getItem(APP_NAV_STORAGE_KEY);
     if (!raw) return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
     const parsed = JSON.parse(raw);
+    if (parsed.mode === 'TV_THEATER' && parsed.tvCode) {
+      return { mode: 'TV_THEATER', tvCode: parsed.tvCode, multiAction: null, urlRoom: '' };
+    }
     if (urlRoom) {
       if (parsed.mode === 'MULTI_DEVICE' && parsed.multiAction?.code === urlRoom) {
         return { mode: 'MULTI_DEVICE', multiAction: parsed.multiAction, urlRoom: '', tvCode: '' };
@@ -114,7 +118,7 @@ function loadSavedNavState() {
       mode: parsed.mode || 'HOME',
       multiAction: parsed.multiAction || null,
       urlRoom: '',
-      tvCode: '',
+      tvCode: parsed.tvCode || '',
     };
   } catch {
     return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
@@ -129,7 +133,7 @@ export default function App() {
 
   const [hostName, setHostName] = useState('');
   const [joinName, setJoinName] = useState('');
-  const [joinCode, setJoinCode] = useState(savedNav.urlRoom || '');
+  const [joinCode, setJoinCode] = useState(savedNav.urlRoom || savedNav.tvCode || '');
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [dossierModalTab, setDossierModalTab] = useState('ROLES'); // 'ROLES' | 'RULES'
   const [selectedDossierRole, setSelectedDossierRole] = useState('MAFIA');
@@ -137,13 +141,17 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const payload = JSON.stringify({ mode, multiAction });
+      const payload = JSON.stringify({
+        mode,
+        multiAction,
+        tvCode: mode === 'TV_THEATER' ? (savedNav.tvCode || joinCode) : '',
+      });
       sessionStorage.setItem(APP_NAV_STORAGE_KEY, payload);
       localStorage.setItem(APP_NAV_STORAGE_KEY, payload);
     } catch {
       // Ignore storage errors
     }
-  }, [mode, multiAction]);
+  }, [mode, multiAction, savedNav.tvCode, joinCode]);
 
   // Initialize & listen to browser history so Back button returns to Front Page
   useEffect(() => {
@@ -272,7 +280,19 @@ export default function App() {
   }, [showRulesModal, dossierModalTab]);
 
   if (mode === 'TV_THEATER') {
-    return <TvTheaterMode roomCode={savedNav.tvCode || joinCode} onExit={navigateBackHome} />;
+    return (
+      <TvTheaterMode
+        roomCode={savedNav.tvCode || joinCode}
+        onExit={navigateBackHome}
+        onSwitchToPlayer={({ roomCode: code, playerName }) => {
+          enterMultiDevice({
+            type: 'join',
+            code,
+            name: playerName,
+          });
+        }}
+      />
+    );
   }
 
   if (mode === 'SINGLE_DEVICE') {
@@ -305,6 +325,18 @@ export default function App() {
       name: joinName.trim() || 'Player',
       code: joinCode.trim().toUpperCase(),
     });
+  };
+
+  const handleLaunchTvRoom = (e) => {
+    if (e) e.preventDefault();
+    if (!joinCode || joinCode.trim().length < 4) return;
+    const code = joinCode.trim().toUpperCase();
+    clearUrlRoomInviteParam();
+    setInvitedRoomCode('');
+    setShowRulesModal(false);
+    setMode('TV_THEATER');
+    setJoinCode(code);
+    window.history.pushState({ mode: 'TV_THEATER', tvCode: code, showRulesModal: false }, '');
   };
 
   return (
@@ -539,14 +571,24 @@ export default function App() {
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                   placeholder="CODE"
-                  className="sm:col-span-4 rounded-xl bg-black/70 border border-white/15 px-3 py-2.5 text-sm font-mono font-bold uppercase tracking-widest text-center text-[#e5c365] placeholder:text-stone-600 focus:outline-none focus:border-[#e5c365]"
+                  className="sm:col-span-3 rounded-xl bg-black/70 border border-white/15 px-3 py-2.5 text-sm font-mono font-bold uppercase tracking-widest text-center text-[#e5c365] placeholder:text-stone-600 focus:outline-none focus:border-[#e5c365]"
                 />
                 <button
                   type="submit"
                   disabled={joinCode.trim().length < 4}
-                  className="sm:col-span-3 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-[#c6a15b]/40 disabled:opacity-40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider transition"
+                  className="sm:col-span-2 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-[#c6a15b]/40 disabled:opacity-40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider transition"
                 >
                   Join
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLaunchTvRoom}
+                  disabled={joinCode.trim().length < 4}
+                  className="sm:col-span-2 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 disabled:opacity-40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider transition inline-flex items-center justify-center gap-1"
+                  title="Launch this device as the big-screen TV Display & Game Master"
+                >
+                  <Tv className="w-3.5 h-3.5" />
+                  TV (GM)
                 </button>
               </div>
             </form>

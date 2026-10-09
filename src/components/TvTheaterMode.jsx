@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Moon,
   Sun,
@@ -12,20 +12,47 @@ import {
   Vote,
   Shield,
   Search,
+  UserCheck,
+  Gamepad2,
+  X,
+  Volume2,
 } from 'lucide-react';
 import { P2PNetworkManager } from '../network/P2PNetworkManager.js';
 import { ROLES } from '../shared/roles.js';
 
-export default function TvTheaterMode({ roomCode, onExit }) {
+function getOrCreateTvPlayerId() {
+  let id =
+    sessionStorage.getItem('mafia_player_id') ||
+    localStorage.getItem('mafia_player_id');
+  if (!id) {
+    id = `tv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    sessionStorage.setItem('mafia_player_id', id);
+    localStorage.setItem('mafia_player_id', id);
+  }
+  return id;
+}
+
+export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
   const [roomState, setRoomState] = useState(null);
   const [statusMsg, setStatusMsg] = useState(`Connecting TV to Room ${roomCode}...`);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const [playerNameInput, setPlayerNameInput] = useState(() => {
+    try {
+      return localStorage.getItem('mafia_player_name') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const playerIdRef = useRef(getOrCreateTvPlayerId());
+  const netRef = useRef(null);
 
   useEffect(() => {
-    const spectatorId = `tv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const net = new P2PNetworkManager({
-      playerId: spectatorId,
+      playerId: playerIdRef.current,
       playerName: 'Living Room TV',
+      isTvDisplay: true,
       onStateUpdate: (state) => {
         setRoomState(state);
       },
@@ -37,12 +64,32 @@ export default function TvTheaterMode({ roomCode, onExit }) {
       },
     });
 
+    netRef.current = net;
     net.joinRoom(roomCode);
 
     return () => {
       net.destroy();
     };
   }, [roomCode]);
+
+  const handleConfirmSwitchToPlayer = () => {
+    const chosenName = (playerNameInput.trim() || 'Player');
+    try {
+      localStorage.setItem('mafia_player_name', chosenName);
+    } catch {}
+
+    if (netRef.current) {
+      netRef.current.dispatch('exit_tv_to_player', { playerName: chosenName });
+    }
+
+    setShowSwitchModal(false);
+
+    if (onSwitchToPlayer) {
+      onSwitchToPlayer({ roomCode, playerName: chosenName, playerId: playerIdRef.current });
+    } else if (onExit) {
+      onExit();
+    }
+  };
 
   if (errorMsg) {
     return (
@@ -87,8 +134,9 @@ export default function TvTheaterMode({ roomCode, onExit }) {
     winReason,
   } = roomState;
 
-  const livingPlayers = players.filter((p) => p.alive && !p.isGameMaster);
-  const eliminatedPlayers = players.filter((p) => !p.alive && !p.isGameMaster);
+  const livingCitizens = players.filter((p) => p.alive && !p.isGameMaster && p.role !== 'GAMEMASTER');
+  const eliminatedCitizens = players.filter((p) => !p.alive && !p.isGameMaster && p.role !== 'GAMEMASTER');
+  const totalCitizens = livingCitizens.length + eliminatedCitizens.length;
 
   return (
     <div className="min-h-screen bg-[#090807] text-[#f5efe2] flex flex-col justify-between p-6 sm:p-10 select-none overflow-hidden relative">
@@ -96,14 +144,15 @@ export default function TvTheaterMode({ roomCode, onExit }) {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(198,161,91,0.06)_0%,transparent_70%)] pointer-events-none" />
 
       {/* Top Header Bar */}
-      <header className="flex items-center justify-between border-b-2 border-[#c6a15b]/30 pb-4 relative z-10">
+      <header className="flex items-center justify-between border-b-2 border-[#c6a15b]/30 pb-4 relative z-10 gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#c6a15b]/20 border border-[#e5c365]/50 flex items-center justify-center">
             <Tv className="w-5 h-5 text-[#e5c365]" />
           </div>
           <div>
-            <div className="text-[11px] font-serif-title uppercase tracking-[0.25em] text-[#e5c365] font-black">
-              Syndicate Living Room Theater
+            <div className="text-[10px] sm:text-[11px] font-serif-title uppercase tracking-[0.22em] text-[#e5c365] font-black flex items-center gap-1.5">
+              <span>Game Master Display</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
             <div className="text-xl sm:text-2xl font-serif-title font-black uppercase tracking-wider text-[#f5efe2]">
               MAFIA // SYNDICATE
@@ -111,18 +160,30 @@ export default function TvTheaterMode({ roomCode, onExit }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="px-5 py-2 rounded-2xl bg-stone-950 border-2 border-[#c6a15b]/60 flex items-center gap-3 shadow-[0_0_20px_rgba(198,161,91,0.2)]">
-            <span className="text-xs font-serif-title uppercase tracking-widest text-stone-400">
-              Room PIN
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="px-4 sm:px-5 py-2 rounded-2xl bg-stone-950 border-2 border-[#c6a15b]/60 flex items-center gap-2 sm:gap-3 shadow-[0_0_20px_rgba(198,161,91,0.2)]">
+            <span className="text-[10px] sm:text-xs font-serif-title uppercase tracking-widest text-stone-400">
+              PIN
             </span>
-            <span className="text-2xl sm:text-3xl font-mono font-black tracking-widest text-[#e5c365]">
+            <span className="text-xl sm:text-3xl font-mono font-black tracking-widest text-[#e5c365]">
               {code}
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowSwitchModal(true)}
+            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-[#e5c365] hover:text-white font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition shadow-sm"
+            title="Exit TV Mode and join the table as a normal player on this device"
+          >
+            <UserCheck className="w-4 h-4 text-[#e5c365]" />
+            <span className="hidden sm:inline">Join as Player</span>
+            <span className="sm:hidden">Play</span>
+          </button>
+
           <button
             onClick={onExit}
-            className="text-xs text-stone-500 hover:text-stone-300 transition uppercase tracking-wider"
+            className="text-xs text-stone-500 hover:text-stone-300 transition uppercase tracking-wider px-2 py-1"
           >
             Exit TV
           </button>
@@ -135,9 +196,10 @@ export default function TvTheaterMode({ roomCode, onExit }) {
         {phase === 'LOBBY' && (
           <div className="space-y-8 w-full">
             <div className="space-y-2">
-              <span className="text-sm font-serif-title font-bold uppercase tracking-[0.3em] text-[#e5c365]">
-                Connecting Citizens • Living Room Lobby
-              </span>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365] mx-auto">
+                <Tv className="w-3.5 h-3.5" />
+                <span>Autonomous Game Master Active</span>
+              </div>
               <h1 className="text-4xl sm:text-6xl font-serif-title font-black uppercase tracking-wider text-[#f5efe2] drop-shadow-[0_5px_20px_rgba(0,0,0,0.9)]">
                 Take Your Seats at the Table
               </h1>
@@ -148,19 +210,24 @@ export default function TvTheaterMode({ roomCode, onExit }) {
 
             {/* Players Joined Wall */}
             <div className="p-6 rounded-3xl deco-panel space-y-4 max-w-3xl mx-auto w-full">
-              <div className="text-xs font-serif-title font-bold uppercase tracking-[0.2em] text-[#e5c365]">
-                Citizens Present in the Parlor ({players.length})
+              <div className="flex items-center justify-between border-b border-[#c6a15b]/20 pb-2 text-xs font-serif-title font-bold uppercase tracking-[0.2em] text-[#e5c365]">
+                <span>Citizens in the Parlor ({livingCitizens.length})</span>
+                <span className="text-[11px] text-stone-400 font-normal">Need 4+ to start</span>
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                {players.map((p) => (
-                  <div
-                    key={p.id}
-                    className="px-5 py-2.5 rounded-2xl bg-stone-950/90 border border-[#c6a15b]/40 text-[#f5efe2] font-serif-title font-bold text-sm sm:text-base shadow-[0_0_15px_rgba(0,0,0,0.6)] flex items-center gap-2"
-                  >
-                    <span>{p.name}</span>
-                    {p.isBot && <span className="text-[10px] text-stone-400 font-mono">(AI)</span>}
-                  </div>
-                ))}
+              <div className="flex flex-wrap items-center justify-center gap-3 min-h-[70px]">
+                {livingCitizens.length === 0 ? (
+                  <p className="text-sm text-stone-400 italic">Waiting for players to join with PIN {code}...</p>
+                ) : (
+                  livingCitizens.map((p) => (
+                    <div
+                      key={p.id}
+                      className="px-5 py-2.5 rounded-2xl bg-stone-950/90 border border-[#c6a15b]/40 text-[#f5efe2] font-serif-title font-bold text-sm sm:text-base shadow-[0_0_15px_rgba(0,0,0,0.6)] flex items-center gap-2"
+                    >
+                      <span>{p.name}</span>
+                      {p.isBot && <span className="text-[10px] text-stone-400 font-mono">(AI)</span>}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -179,7 +246,7 @@ export default function TvTheaterMode({ roomCode, onExit }) {
               Look down at your phone screens! Keep your card hidden from your neighbors. Tap ready once you know your identity.
             </p>
             <div className="text-sm font-serif-title uppercase tracking-widest text-[#e5c365] font-bold">
-              {players.filter((p) => p.ready).length} of {players.length} Players Confirmed
+              {livingCitizens.filter((p) => p.ready).length} of {livingCitizens.length} Players Confirmed
             </div>
           </div>
         )}
@@ -199,7 +266,7 @@ export default function TvTheaterMode({ roomCode, onExit }) {
               </h2>
             </div>
             <p className="text-base sm:text-lg text-stone-300 max-w-xl mx-auto leading-relaxed">
-              Silent footsteps echo across the cobblestones. Secret syndicate operatives and protectors are making their moves in private.
+              Silent footsteps echo across the cobblestones. Secret syndicate operatives and protectors are making their moves in private on their phones.
             </p>
           </div>
         )}
@@ -280,16 +347,75 @@ export default function TvTheaterMode({ roomCode, onExit }) {
       <footer className="border-t-2 border-[#c6a15b]/25 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-400 relative z-10">
         <div className="flex items-center gap-2">
           <Users className="w-4 h-4 text-[#c6a15b]" />
-          <span>Active Citizens ({livingPlayers.length} Alive)</span>
-          {eliminatedPlayers.length > 0 && (
-            <span className="text-rose-400">({eliminatedPlayers.length} Deceased)</span>
+          <span>Active Citizens ({livingCitizens.length} Alive)</span>
+          {eliminatedCitizens.length > 0 && (
+            <span className="text-rose-400">({eliminatedCitizens.length} Deceased)</span>
           )}
         </div>
 
         <div className="flex items-center gap-2 text-stone-300">
-          <span>Control match progression from the Host&apos;s phone</span>
+          <span>This TV device serves as Game Master. Players play on their own phones.</span>
         </div>
       </footer>
+
+      {/* Switch to Player Modal */}
+      {showSwitchModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full deco-panel p-6 sm:p-8 space-y-5 rounded-3xl border border-[#c6a15b]/60 shadow-[0_0_50px_rgba(0,0,0,0.9)] text-left">
+            <div className="flex items-center justify-between border-b border-[#c6a15b]/30 pb-3">
+              <div className="flex items-center gap-3">
+                <UserCheck className="w-6 h-6 text-[#e5c365]" />
+                <div>
+                  <h3 className="text-lg font-serif-title font-bold uppercase tracking-wider text-[#f5efe2]">
+                    Join Table as Citizen
+                  </h3>
+                  <p className="text-xs text-stone-300">
+                    Exit TV Theater and take a normal player seat on this screen.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSwitchModal(false)}
+                className="text-stone-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                Your Player Name
+              </label>
+              <input
+                type="text"
+                value={playerNameInput}
+                onChange={(e) => setPlayerNameInput(e.target.value)}
+                placeholder="e.g. Alex"
+                className="w-full rounded-xl bg-black/80 border border-[#c6a15b]/40 px-3.5 py-2.5 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#e5c365]"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSwitchModal(false)}
+                className="px-4 py-2 rounded-xl text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSwitchToPlayer}
+                className="px-5 py-2.5 rounded-xl deco-gold-btn text-black font-serif-title font-black text-xs uppercase tracking-widest transition"
+              >
+                Confirm & Join Table
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

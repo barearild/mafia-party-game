@@ -432,16 +432,35 @@ export default function MultiDeviceMode({
                   )}
                 </button>
 
-                <a
-                  href={`/?tv=${code}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-1.5 rounded-xl bg-stone-950/80 hover:bg-stone-900 border border-[#c6a15b]/25 text-stone-300 hover:text-[#e5c365] font-serif-title font-bold text-[11px] uppercase tracking-wider transition"
-                  title="Open a big-screen theater display on a TV, tablet, or laptop"
-                >
-                  <Tv className="w-3.5 h-3.5 text-[#c6a15b]" />
-                  Open TV / Big Screen Display
-                </a>
+                <div className="flex flex-col sm:flex-row gap-2 w-full">
+                  <a
+                    href={`/?tv=${code}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-stone-950/80 hover:bg-stone-900 border border-[#c6a15b]/25 text-stone-300 hover:text-[#e5c365] font-serif-title font-bold text-[11px] uppercase tracking-wider transition"
+                    title="Open a big-screen theater display on a TV, tablet, or laptop"
+                  >
+                    <Tv className="w-3.5 h-3.5 text-[#c6a15b]" />
+                    Open TV (New Tab)
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('tv', code);
+                        window.location.href = url.toString();
+                      } catch {
+                        window.location.href = `/?tv=${code}`;
+                      }
+                    }}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-[#e5c365] font-serif-title font-bold text-[11px] uppercase tracking-wider transition"
+                    title="Switch this device into the TV Theater & Game Master display"
+                  >
+                    <Tv className="w-3.5 h-3.5 text-[#e5c365]" />
+                    Switch to TV (GM)
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -708,6 +727,12 @@ export default function MultiDeviceMode({
                           {isDesignatedGm && (
                             <span className="text-[10px] px-2 py-0.5 rounded bg-[#c6a15b]/25 text-[#e5c365] border border-[#c6a15b]/50 font-serif-title font-bold uppercase tracking-wider">
                               GM
+                            </span>
+                          )}
+                          {p.isTvDisplay && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-[#e5c365] border border-amber-400/40 font-serif-title font-bold uppercase tracking-wider flex items-center gap-1">
+                              <Tv className="w-3 h-3" />
+                              TV
                             </span>
                           )}
                           {p.id === hostId && (

@@ -52,12 +52,18 @@ export function createInitialRoom(code, hostPlayerId, hostName) {
 
 export function getActiveParticipants(room) {
   const gmId = room.gameMasterId;
-  return room.players.filter((p) => p.id !== gmId && p.role !== 'GAMEMASTER');
+  return room.players.filter(
+    (p) => p.id !== gmId && p.role !== 'GAMEMASTER' && !p.isGameMaster
+  );
 }
 
 export function getExpectedCitizenCount(room) {
+  const gmPlayersCount = room.players.filter(
+    (p) => p.isGameMaster || p.role === 'GAMEMASTER' || p.id === room.gameMasterId
+  ).length;
   const hasHumanGm = room.settings.gmMode && room.settings.gmMode !== 'NONE';
-  return Math.max(0, room.players.length - (hasHumanGm ? 1 : 0));
+  const gmCount = Math.max(gmPlayersCount, hasHumanGm ? 1 : 0);
+  return Math.max(0, room.players.length - gmCount);
 }
 
 export function syncRoleCountsIfAuto(room) {
