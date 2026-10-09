@@ -16,6 +16,7 @@ import {
 } from '../shared/roles.js';
 
 const ROOM_PEER_PREFIX = 'mafia-room-v1-';
+const STORAGE_ROOM_KEY = 'mafia_host_room_state_v1';
 
 export class P2PNetworkManager {
   constructor({ playerId, playerName, onStateUpdate, onError, onStatusChange }) {
@@ -32,6 +33,86 @@ export class P2PNetworkManager {
     this.hostConnection = null; // Only on clients
     this.clientConnections = new Map(); // Only on host: Map<playerId, DataConnection>
     this.destroyed = false;
+    this.reconnectTimer = null;
+    this.wakeLock = null;
+
+    this._setupVisibilityHandler();
+    this._requestWakeLock();
+  }
+
+  // --- WAKE LOCK (Keeps screen awake on mobile) ---
+  async _requestWakeLock() {
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+      try {
+        this.wakeLock = await navigator.wakeLock.request('screen');
+        this.wakeLock.addEventListener('release', () => {
+          this.wakeLock = null;
+        });
+      } catch (e) {
+        // WakeLock request can fail if low battery or permission denied
+      }
+    }
+  }
+
+  // --- VISIBILITY CHANGE / RESUME HANDLING ---
+  _setupVisibilityHandler() {
+    if (typeof document === 'undefined') return;
+
+    this._visHandler = async () => {
+      if (document.visibilityState === 'visible') {
+        // Re-request wake lock
+        this._requestWakeLock();
+
+        if (this.destroyed) return;
+
+        // If Host: check if Peer is disconnected from signaling server or destroyed
+        if (this.isHost) {
+          if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
+            try {
+              this.peer.reconnect();
+            } catch (e) {
+              console.warn('Host reconnect error:', e);
+            }
+          } else if (!this.peer || this.peer.destroyed) {
+            // Peer completely closed by OS: re-init host peer with preserved state
+            this._initHostPeer();
+          }
+        } else {
+          // If Client: check if host connection is alive
+          if (!this.hostConnection || !this.hostConnection.open) {
+            this._reconnectToHost();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', this._visHandler);
+  }
+
+  // --- PERSISTENCE HELPERS (Host Room State) ---
+  _saveHostRoomToStorage() {
+    if (!this.room || !this.roomCode) return;
+    try {
+      sessionStorage.setItem(STORAGE_ROOM_KEY, JSON.stringify(this.room));
+    } catch {}
+  }
+
+  _loadHostRoomFromStorage(expectedCode) {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_ROOM_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.code === expectedCode && parsed.hostId === this.playerId) {
+        return parsed;
+      }
+    } catch {}
+    return null;
+  }
+
+  clearHostStorage() {
+    try {
+      sessionStorage.removeItem(STORAGE_ROOM_KEY);
+    } catch {}
   }
 
   // --- HOST SETUP ---
@@ -39,17 +120,47 @@ export class P2PNetworkManager {
     this.isHost = true;
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = customCode;
+
     if (!code) {
-      code = '';
-      for (let i = 0; i < 4; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
+      // Check if we already have an active room stored for this session
+      try {
+        const saved = sessionStorage.getItem(STORAGE_ROOM_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.code && parsed?.hostId === this.playerId) {
+            code = parsed.code;
+            this.room = parsed;
+          }
+        }
+      } catch {}
+
+      if (!code) {
+        code = '';
+        for (let i = 0; i < 4; i++) {
+          code += chars[Math.floor(Math.random() * chars.length)];
+        }
       }
     }
-    this.roomCode = code.toUpperCase().trim();
-    this.room = createInitialRoom(this.roomCode, this.playerId, this.playerName);
 
+    this.roomCode = code.toUpperCase().trim();
+    if (!this.room) {
+      this.room = createInitialRoom(this.roomCode, this.playerId, this.playerName);
+      this._saveHostRoomToStorage();
+    }
+
+    this._initHostPeer();
+    return this.roomCode;
+  }
+
+  _initHostPeer() {
     const peerId = `${ROOM_PEER_PREFIX}${this.roomCode}`;
-    this.onStatusChange(`Initializing host network (Room ${this.roomCode})...`);
+    this.onStatusChange(`Initializing room host (Room ${this.roomCode})...`);
+
+    if (this.peer && !this.peer.destroyed) {
+      try {
+        this.peer.destroy();
+      } catch {}
+    }
 
     this.peer = new Peer(peerId, {
       debug: 1,
@@ -70,28 +181,47 @@ export class P2PNetworkManager {
       this._handleIncomingClient(conn);
     });
 
-    this.peer.on('error', (err) => {
-      console.warn('P2P Host error:', err);
-      if (err.type === 'unavailable-id') {
-        // Room code collided with another active room on PeerJS cloud, retry with new code
-        this.destroy();
-        this.createRoom();
-      } else {
-        this.onError(`Network error: ${err.message || err.type}`);
+    this.peer.on('disconnected', () => {
+      // Signaling disconnected (e.g. mobile sleep) - attempt reconnect to broker
+      if (!this.destroyed && this.peer && !this.peer.destroyed) {
+        try {
+          this.peer.reconnect();
+        } catch {}
       }
     });
 
-    return this.roomCode;
+    this.peer.on('error', (err) => {
+      console.warn('P2P Host error:', err);
+      if (err.type === 'unavailable-id') {
+        // If room ID is taken, retry with a fresh code
+        this.clearHostStorage();
+        this.destroy();
+        this.createRoom();
+      } else {
+        // Non-fatal warning or network fluctuation
+        console.warn('Network issue:', err.message || err.type);
+      }
+    });
   }
 
   // --- CLIENT SETUP ---
   joinRoom(code) {
     this.isHost = false;
     this.roomCode = (code || '').toUpperCase().trim();
+    this._connectAsClient();
+  }
+
+  _connectAsClient() {
     const hostPeerId = `${ROOM_PEER_PREFIX}${this.roomCode}`;
     const myClientPeerId = `mafia-client-${this.playerId.replace(/[^a-zA-Z0-9_-]/g, '')}-${Math.random().toString(36).slice(2, 6)}`;
 
     this.onStatusChange(`Connecting to Room ${this.roomCode}...`);
+
+    if (this.peer && !this.peer.destroyed) {
+      try {
+        this.peer.destroy();
+      } catch {}
+    }
 
     this.peer = new Peer(myClientPeerId, {
       debug: 1,
@@ -114,12 +244,11 @@ export class P2PNetworkManager {
         if (!conn.open) {
           this.onError(`Could not connect to Room ${this.roomCode}. Please ensure the host is online and check the PIN!`);
         }
-      }, 10000);
+      }, 12000);
 
       conn.on('open', () => {
         clearTimeout(connectTimeout);
         this.onStatusChange(`Connected!`);
-        // Send join request
         conn.send({
           type: 'join_request',
           playerId: this.playerId,
@@ -136,12 +265,13 @@ export class P2PNetworkManager {
       });
 
       conn.on('close', () => {
-        this.onError(`Disconnected from host. The host may have left or refreshed.`);
+        // Instead of instantly displaying an error, give the host 15 seconds to resume screen
+        this._scheduleClientReconnect();
       });
 
       conn.on('error', (err) => {
         clearTimeout(connectTimeout);
-        this.onError(`Connection failed: ${err.message || 'Unknown error'}`);
+        this._scheduleClientReconnect();
       });
     });
 
@@ -149,11 +279,56 @@ export class P2PNetworkManager {
       if (connectTimeout) clearTimeout(connectTimeout);
       console.warn('P2P Client error:', err);
       if (err.type === 'peer-unavailable') {
-        this.onError(`Room ${this.roomCode} was not found. Please verify the 4-letter code!`);
+        this._scheduleClientReconnect();
       } else {
         this.onError(`Network error: ${err.message || err.type}`);
       }
     });
+  }
+
+  _scheduleClientReconnect() {
+    if (this.destroyed) return;
+    this.onStatusChange(`Host screen paused. Waiting for host to reconnect...`);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+
+    let retryCount = 0;
+    const maxRetries = 5;
+
+    const tryRetry = () => {
+      if (this.destroyed) return;
+      retryCount++;
+      if (retryCount <= maxRetries) {
+        this.onStatusChange(`Reconnecting to host (attempt ${retryCount}/${maxRetries})...`);
+        const hostPeerId = `${ROOM_PEER_PREFIX}${this.roomCode}`;
+        if (this.peer && !this.peer.destroyed) {
+          const conn = this.peer.connect(hostPeerId, { reliable: true });
+          this.hostConnection = conn;
+          conn.on('open', () => {
+            this.onStatusChange(`Reconnected!`);
+            conn.send({
+              type: 'join_request',
+              playerId: this.playerId,
+              playerName: this.playerName,
+            });
+          });
+          conn.on('data', (data) => {
+            if (data?.type === 'room_state') {
+              this.onStateUpdate(data.state);
+            }
+          });
+        }
+        this.reconnectTimer = setTimeout(tryRetry, 3000);
+      } else {
+        this.onError(`Disconnected from host. The host may have closed their game.`);
+      }
+    };
+
+    this.reconnectTimer = setTimeout(tryRetry, 2500);
+  }
+
+  _reconnectToHost() {
+    if (this.destroyed || this.isHost) return;
+    this._scheduleClientReconnect();
   }
 
   // --- HOST INCOMING CLIENT CONNECTION HANDLER ---
@@ -207,6 +382,7 @@ export class P2PNetworkManager {
           syncRoleCountsIfAuto(this.room);
         }
 
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         return;
       }
@@ -221,6 +397,7 @@ export class P2PNetworkManager {
         const player = this.room.players.find((p) => p.id === clientPlayerId);
         if (player) {
           player.connected = false;
+          this._saveHostRoomToStorage();
           this._broadcastRoom();
         }
       }
@@ -266,6 +443,7 @@ export class P2PNetworkManager {
           investigations: [],
         });
         syncRoleCountsIfAuto(room);
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -279,6 +457,7 @@ export class P2PNetworkManager {
           room.settings.assignedGmPlayerId = room.hostId;
         }
         syncRoleCountsIfAuto(room);
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -287,6 +466,7 @@ export class P2PNetworkManager {
         if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
         room.settings = { ...room.settings, ...payload.settings };
         syncRoleCountsIfAuto(room);
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -300,6 +480,7 @@ export class P2PNetworkManager {
           room.settings.gmMode = 'ASSIGNED';
           room.settings.assignedGmPlayerId = chosen.id;
           syncRoleCountsIfAuto(room);
+          this._saveHostRoomToStorage();
           this._broadcastRoom();
         }
         break;
@@ -389,6 +570,7 @@ export class P2PNetworkManager {
         room.phase = 'ROLE_REVEAL';
 
         this._triggerBotActions();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -399,6 +581,7 @@ export class P2PNetworkManager {
         if (player) {
           player.ready = true;
           this._checkRoleRevealComplete();
+          this._saveHostRoomToStorage();
           this._broadcastRoom();
         }
         break;
@@ -421,6 +604,7 @@ export class P2PNetworkManager {
         } else if (room.phase === 'VOTE_RESULTS') {
           this._startNightPhase();
         }
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -448,6 +632,7 @@ export class P2PNetworkManager {
         }
 
         this._checkNightComplete();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -463,6 +648,7 @@ export class P2PNetworkManager {
           room.nightActions.detectiveSubmitted = true;
         }
         this._checkNightComplete();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -483,6 +669,7 @@ export class P2PNetworkManager {
           text: clean,
           timestamp: Date.now(),
         });
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -500,6 +687,7 @@ export class P2PNetworkManager {
 
         room.dayVotes[player.id] = payload.targetId;
         this._checkDayVotingComplete();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -519,6 +707,7 @@ export class P2PNetworkManager {
           p.ready = p.isBot;
           p.investigations = [];
         });
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
       }
@@ -599,6 +788,7 @@ export class P2PNetworkManager {
       });
       if (changed) {
         this._checkRoleRevealComplete();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
       }
     } else if (room.phase === 'NIGHT') {
@@ -641,6 +831,7 @@ export class P2PNetworkManager {
         });
 
         this._checkNightComplete();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
       }, 1200);
     } else if (room.phase === 'DAY_VOTING') {
@@ -680,6 +871,7 @@ export class P2PNetworkManager {
         });
 
         this._checkDayVotingComplete();
+        this._saveHostRoomToStorage();
         this._broadcastRoom();
       }, 1500);
     }
@@ -706,6 +898,18 @@ export class P2PNetworkManager {
 
   destroy() {
     this.destroyed = true;
+    if (this._visHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._visHandler);
+    }
+    if (this.wakeLock) {
+      try {
+        this.wakeLock.release();
+      } catch {}
+      this.wakeLock = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
     if (this.hostConnection) {
       try {
         this.hostConnection.close();

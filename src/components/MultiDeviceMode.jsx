@@ -294,7 +294,12 @@ export default function MultiDeviceMode({
       <header className="border-b border-[#c6a15b]/25 bg-[#0a0908]/90 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <button
-            onClick={onBackHome}
+            onClick={() => {
+              if (networkRef.current) {
+                networkRef.current.clearHostStorage();
+              }
+              onBackHome();
+            }}
             className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-stone-300 hover:text-[#e5c365] font-serif-title uppercase tracking-wider transition shrink-0"
           >
             <ArrowLeft className="w-4 h-4 text-[#c6a15b]" />
