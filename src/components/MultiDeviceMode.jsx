@@ -381,58 +381,48 @@ export default function MultiDeviceMode({
                   Invite Players to Join on Their Phones
                 </h1>
                 <p className="text-xs sm:text-sm text-stone-300 max-w-xl leading-relaxed">
-                  Share the direct room link below, or have players open{' '}
+                  Have players open{' '}
                   <span className="font-mono text-[#e5c365] bg-stone-950 px-2 py-0.5 rounded border border-[#c6a15b]/30">
                     {window.location.origin}
                   </span>{' '}
-                  and enter the 4-letter Room Code:
+                  and enter the 4-letter Room Code below, or tap Share Link:
                 </p>
-
-                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={copyDirectRoomLink}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest transition"
-                  >
-                    {copiedLink ? (
-                      <>
-                        <Check className="w-4 h-4" />
-                        Invite Link Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Link2 className="w-4 h-4" />
-                        Copy Direct Room Link
-                      </>
-                    )}
-                  </button>
-
-                  {typeof navigator !== 'undefined' && navigator.share && (
-                    <button
-                      type="button"
-                      onClick={shareDirectRoomLink}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 border border-[#c6a15b]/45 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-widest transition"
-                    >
-                      <Share2 className="w-4 h-4 text-[#c6a15b]" />
-                      Share Link
-                    </button>
-                  )}
-                </div>
               </div>
 
-              <div
-                onClick={copyRoomCode}
-                className="cursor-pointer group px-8 py-5 rounded-2xl bg-stone-950/90 border-2 border-[#c6a15b]/60 hover:border-[#e5c365] text-center transition shadow-[0_0_25px_rgba(198,161,91,0.15)] shrink-0"
-              >
-                <div className="text-[11px] font-serif-title uppercase tracking-[0.2em] text-stone-400">
-                  Room Code
+              {/* PIN Card + Share Action */}
+              <div className="flex flex-col items-center gap-2.5 shrink-0 w-full sm:w-auto">
+                <div
+                  onClick={copyRoomCode}
+                  className="cursor-pointer group px-8 py-5 rounded-2xl bg-stone-950/90 border-2 border-[#c6a15b]/60 hover:border-[#e5c365] text-center transition shadow-[0_0_25px_rgba(198,161,91,0.15)] w-full sm:w-auto"
+                >
+                  <div className="text-[11px] font-serif-title uppercase tracking-[0.2em] text-stone-400">
+                    Room Code
+                  </div>
+                  <div className="text-4xl sm:text-5xl font-serif-title font-black tracking-[0.22em] text-[#e5c365] mt-1">
+                    {code}
+                  </div>
+                  <div className="text-[11px] font-serif-title uppercase tracking-wider text-[#c6a15b] mt-1.5 flex items-center justify-center gap-1">
+                    {copiedCode ? 'Copied!' : 'Tap to copy code'}
+                  </div>
                 </div>
-                <div className="text-4xl sm:text-5xl font-serif-title font-black tracking-[0.22em] text-[#e5c365] mt-1">
-                  {code}
-                </div>
-                <div className="text-[11px] font-serif-title uppercase tracking-wider text-[#c6a15b] mt-1.5 flex items-center justify-center gap-1">
-                  {copiedCode ? 'Copied!' : 'Tap to copy code'}
-                </div>
+
+                <button
+                  type="button"
+                  onClick={shareDirectRoomLink}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-[#c6a15b]/40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-widest transition shadow-sm"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Link Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-4 h-4 text-[#c6a15b]" />
+                      Share Room Link
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
