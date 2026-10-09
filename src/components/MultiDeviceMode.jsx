@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
+import { P2PNetworkManager } from '../network/P2PNetworkManager.js';
 import {
   ArrowLeft,
   Users,
@@ -56,71 +56,65 @@ export default function MultiDeviceMode({
   onUpdateAction,
   onBackHome,
 }) {
-  const [socket, setSocket] = useState(null);
   const [roomState, setRoomState] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [statusMsg, setStatusMsg] = useState('Connecting to Room...');
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [hideMyRole, setHideMyRole] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const playerIdRef = useRef(getOrCreatePlayerId());
-  const actionRef = useRef(initialAction);
+  const networkRef = useRef(null);
+
+  // socket-compatible wrapper so all existing socket.emit calls remain 100% compatible
+  const socket = {
+    emit: (event, payload = {}, callback) => {
+      if (networkRef.current) {
+        networkRef.current.dispatch(event, payload);
+        if (typeof callback === 'function') {
+          callback({ ok: true });
+        }
+      }
+    },
+  };
 
   useEffect(() => {
-    const newSocket = io({
-      path: '/socket.io',
+    const action = initialAction;
+    const net = new P2PNetworkManager({
+      playerId: playerIdRef.current,
+      playerName: action?.name || 'Player',
+      onStateUpdate: (state) => {
+        setRoomState((prev) => {
+          if (prev?.phase !== 'GAME_OVER' && state?.phase === 'GAME_OVER') {
+            confetti({ particleCount: 100, spread: 75, origin: { y: 0.6 } });
+          }
+          return state;
+        });
+      },
+      onError: (err) => {
+        setErrorMsg(err);
+      },
+      onStatusChange: (status) => {
+        setStatusMsg(status);
+      },
     });
-    setSocket(newSocket);
+    networkRef.current = net;
 
-    newSocket.on('connect', () => {
-      const currentAction = actionRef.current;
-      if (currentAction?.type === 'create') {
-        newSocket.emit(
-          'create_room',
-          {
-            playerId: playerIdRef.current,
-            playerName: currentAction.name || 'Host',
-          },
-          (res) => {
-            if (!res?.ok) {
-              setErrorMsg(res?.error || 'Could not create room.');
-            } else if (res.code) {
-              const joinAction = {
-                type: 'join',
-                code: res.code,
-                name: currentAction.name || 'Host',
-              };
-              actionRef.current = joinAction;
-              if (onUpdateAction) onUpdateAction(joinAction);
-            }
-          }
-        );
-      } else if (currentAction?.type === 'join') {
-        newSocket.emit(
-          'join_room',
-          {
-            code: currentAction.code,
-            playerId: playerIdRef.current,
-            playerName: currentAction.name || 'Player',
-          },
-          (res) => {
-            if (!res?.ok) setErrorMsg(res?.error || 'Could not join room.');
-          }
-        );
+    if (action?.type === 'create') {
+      const roomCode = net.createRoom();
+      if (onUpdateAction) {
+        onUpdateAction({
+          type: 'join',
+          code: roomCode,
+          name: action.name || 'Host',
+        });
       }
-    });
-
-    newSocket.on('room_state', (state) => {
-      setRoomState((prev) => {
-        if (prev?.phase !== 'GAME_OVER' && state.phase === 'GAME_OVER') {
-          confetti({ particleCount: 100, spread: 75, origin: { y: 0.6 } });
-        }
-        return state;
-      });
-    });
+    } else if (action?.type === 'join') {
+      net.joinRoom(action.code);
+    }
 
     return () => {
-      newSocket.disconnect();
+      net.destroy();
     };
   }, []);
 
@@ -228,7 +222,7 @@ export default function MultiDeviceMode({
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-4 border-[#c6a15b] border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="text-sm font-serif-title uppercase tracking-wider text-stone-300">
-            Connecting to Room Server...
+            {statusMsg || 'Connecting to Room...'}
           </p>
         </div>
       </div>
