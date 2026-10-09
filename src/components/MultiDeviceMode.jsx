@@ -154,14 +154,7 @@ export default function MultiDeviceMode({
 
   const getDirectRoomUrl = () => {
     if (!roomState?.code) return window.location.origin;
-    const isLocalhost =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1';
-    const baseOrigin =
-      isLocalhost && roomState.serverIp && roomState.serverIp !== 'localhost'
-        ? `http://${roomState.serverIp}:${window.location.port || '5174'}`
-        : window.location.origin;
-    return `${baseOrigin}/?room=${roomState.code}`;
+    return `${window.location.origin}/?room=${roomState.code}`;
   };
 
   const copyRoomCode = async () => {
@@ -388,9 +381,9 @@ export default function MultiDeviceMode({
                   Invite Players to Join on Their Phones
                 </h1>
                 <p className="text-xs sm:text-sm text-stone-300 max-w-xl leading-relaxed">
-                  Share the direct room link below, or have players on the same Wi-Fi open{' '}
+                  Share the direct room link below, or have players open{' '}
                   <span className="font-mono text-[#e5c365] bg-stone-950 px-2 py-0.5 rounded border border-[#c6a15b]/30">
-                    http://{serverIp}:{window.location.port || '5174'}
+                    {window.location.origin}
                   </span>{' '}
                   and enter the 4-letter Room Code:
                 </p>
