@@ -16,6 +16,7 @@ import MultiDeviceMode from './components/MultiDeviceMode.jsx';
 
 const APP_NAV_STORAGE_KEY = 'mafia_app_nav_v1';
 const SINGLE_DEVICE_STORAGE_KEY = 'mafia_single_device_state_v1';
+const STORAGE_ROOM_KEY = 'mafia_host_room_state_v1';
 
 function getSavedSingleDeviceSummary() {
   try {
@@ -29,6 +30,27 @@ function getSavedSingleDeviceSummary() {
       citizenCount: Array.isArray(parsed.activeCitizens)
         ? parsed.activeCitizens.length
         : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getSavedHostRoomSummary() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_ROOM_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.code || !parsed.hostId) return null;
+    const hostPlayer = Array.isArray(parsed.players)
+      ? parsed.players.find((p) => p.id === parsed.hostId)
+      : null;
+    return {
+      code: parsed.code,
+      phase: parsed.phase || 'LOBBY',
+      round: parsed.round || 0,
+      hostName: hostPlayer?.name || 'Host',
+      playerCount: Array.isArray(parsed.players) ? parsed.players.length : 1,
     };
   } catch {
     return null;
@@ -397,6 +419,57 @@ export default function App() {
           </div>
 
           <div className="space-y-4 pt-2">
+            {/* Quick Resume Active Hosted Room if available */}
+            {(() => {
+              const activeHostRoom = getSavedHostRoomSummary();
+              if (!activeHostRoom) return null;
+              return (
+                <div className="p-4 rounded-2xl bg-[#c6a15b]/15 border-2 border-[#e5c365] space-y-2.5 shadow-[0_0_25px_rgba(198,161,91,0.2)]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-serif-title font-bold uppercase tracking-[0.16em] text-[#e5c365] flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-[#c6a15b]" />
+                      Active Game in Progress
+                    </span>
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-950 text-[#e5c365] border border-[#c6a15b]/40">
+                      ROOM {activeHostRoom.code}
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-200">
+                    You have an open game room with <strong className="text-white">{activeHostRoom.playerCount} player{activeHostRoom.playerCount === 1 ? '' : 's'}</strong> ({activeHostRoom.phase === 'LOBBY' ? 'Lobby' : `Round ${activeHostRoom.round}`}).
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        enterMultiDevice({
+                          type: 'join',
+                          name: activeHostRoom.hostName,
+                          code: activeHostRoom.code,
+                        });
+                      }}
+                      className="flex-1 py-2.5 px-4 rounded-xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center justify-center gap-2 transition"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      Return to Room {activeHostRoom.code}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          sessionStorage.removeItem(STORAGE_ROOM_KEY);
+                        } catch {}
+                        setMode('HOME');
+                      }}
+                      className="py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider border border-white/10 transition"
+                      title="Discard this hosted room"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Host New Room Form */}
             <form
               onSubmit={handleCreateRoom}
