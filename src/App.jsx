@@ -99,30 +99,13 @@ function loadSavedNavState() {
   }
 
   const urlRoom = getUrlRoomInviteCode();
-  try {
-    const raw =
-      sessionStorage.getItem(APP_NAV_STORAGE_KEY) ||
-      localStorage.getItem(APP_NAV_STORAGE_KEY);
-    if (!raw) return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
-    const parsed = JSON.parse(raw);
-    if (parsed.mode === 'TV_THEATER' && parsed.tvCode) {
-      return { mode: 'TV_THEATER', tvCode: parsed.tvCode, multiAction: null, urlRoom: '' };
-    }
-    if (urlRoom) {
-      if (parsed.mode === 'MULTI_DEVICE' && parsed.multiAction?.code === urlRoom) {
-        return { mode: 'MULTI_DEVICE', multiAction: parsed.multiAction, urlRoom: '', tvCode: '' };
-      }
-      return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
-    }
-    return {
-      mode: parsed.mode || 'HOME',
-      multiAction: parsed.multiAction || null,
-      urlRoom: '',
-      tvCode: parsed.tvCode || '',
-    };
-  } catch {
+  if (urlRoom) {
     return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
   }
+
+  // When visiting the root path, ALWAYS land on the Home page.
+  // Active games can be cleanly resumed via the quick return banner on the Home page.
+  return { mode: 'HOME', multiAction: null, urlRoom: '', tvCode: '' };
 }
 
 export default function App() {
@@ -141,13 +124,17 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const payload = JSON.stringify({
-        mode,
-        multiAction,
-        tvCode: mode === 'TV_THEATER' ? (savedNav.tvCode || joinCode) : '',
-      });
-      sessionStorage.setItem(APP_NAV_STORAGE_KEY, payload);
-      localStorage.setItem(APP_NAV_STORAGE_KEY, payload);
+      if (mode === 'HOME') {
+        sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
+        localStorage.removeItem(APP_NAV_STORAGE_KEY);
+      } else {
+        const payload = JSON.stringify({
+          mode,
+          multiAction,
+          tvCode: mode === 'TV_THEATER' ? (savedNav.tvCode || joinCode) : '',
+        });
+        sessionStorage.setItem(APP_NAV_STORAGE_KEY, payload);
+      }
     } catch {
       // Ignore storage errors
     }
@@ -241,6 +228,10 @@ export default function App() {
     setShowRulesModal(false);
     setMode('HOME');
     setMultiAction(null);
+    try {
+      sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
+      localStorage.removeItem(APP_NAV_STORAGE_KEY);
+    } catch {}
     if (window.history.state?.mode && window.history.state.mode !== 'HOME') {
       window.history.back();
     }

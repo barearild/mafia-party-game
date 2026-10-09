@@ -35,6 +35,7 @@ export class P2PNetworkManager {
     this.clientConnections = new Map(); // Only on host: Map<playerId, DataConnection>
     this.destroyed = false;
     this.reconnectTimer = null;
+    this.hasConnectedOnce = false;
     this.wakeLock = null;
 
     this._setupVisibilityHandler();
@@ -267,10 +268,11 @@ export class P2PNetworkManager {
         if (!conn.open) {
           this.onError(`Could not connect to Room ${this.roomCode}. Please ensure the host is online and check the PIN!`);
         }
-      }, 12000);
+      }, 8000);
 
       conn.on('open', () => {
         clearTimeout(connectTimeout);
+        this.hasConnectedOnce = true;
         this.onStatusChange(`Connected!`);
         conn.send({
           type: 'join_request',
@@ -289,13 +291,20 @@ export class P2PNetworkManager {
       });
 
       conn.on('close', () => {
-        // Instead of instantly displaying an error, give the host 15 seconds to resume screen
-        this._scheduleClientReconnect();
+        if (this.hasConnectedOnce) {
+          this._scheduleClientReconnect();
+        } else {
+          this.onError(`Could not connect to Room ${this.roomCode}. The host may be offline.`);
+        }
       });
 
       conn.on('error', (err) => {
         clearTimeout(connectTimeout);
-        this._scheduleClientReconnect();
+        if (this.hasConnectedOnce) {
+          this._scheduleClientReconnect();
+        } else {
+          this.onError(`Could not connect to Room ${this.roomCode}. The host may be offline.`);
+        }
       });
     });
 
@@ -303,7 +312,11 @@ export class P2PNetworkManager {
       if (connectTimeout) clearTimeout(connectTimeout);
       console.warn('P2P Client error:', err);
       if (err.type === 'peer-unavailable') {
-        this._scheduleClientReconnect();
+        if (this.hasConnectedOnce) {
+          this._scheduleClientReconnect();
+        } else {
+          this.onError(`Room ${this.roomCode} was not found. Please ensure the host is online and check the PIN!`);
+        }
       } else {
         this.onError(`Network error: ${err.message || err.type}`);
       }

@@ -113,11 +113,25 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
 
   if (!roomState) {
     return (
-      <div className="min-h-screen bg-[#070605] text-[#f5efe2] flex flex-col items-center justify-center p-6 text-center space-y-4">
-        <div className="w-12 h-12 border-4 border-[#c6a15b] border-t-transparent rounded-full animate-spin" />
-        <p className="text-base font-serif-title uppercase tracking-widest text-stone-300">
-          {statusMsg}
-        </p>
+      <div className="min-h-screen bg-[#070605] text-[#f5efe2] flex items-center justify-center p-6 select-none">
+        <div className="max-w-md w-full deco-panel p-6 sm:p-8 rounded-3xl text-center space-y-5 border border-[#c6a15b]/40 shadow-[0_0_50px_rgba(0,0,0,0.8)]">
+          <div className="w-12 h-12 border-4 border-[#c6a15b] border-t-transparent rounded-full animate-spin mx-auto" />
+          <div className="space-y-1">
+            <h2 className="text-base font-serif-title uppercase tracking-widest text-stone-200">
+              {statusMsg || `Connecting TV to Room ${roomCode}...`}
+            </h2>
+            <p className="text-xs text-stone-400">
+              Looking for active syndicate host...
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onExit}
+            className="w-full py-2.5 rounded-xl deco-gold-btn font-serif-title font-bold uppercase tracking-widest text-xs transition"
+          >
+            Return to Front Page
+          </button>
+        </div>
       </div>
     );
   }

@@ -214,12 +214,56 @@ export default function MultiDeviceMode({
 
   if (!roomState || !roomState.me) {
     return (
-      <div className="min-h-screen bg-noir-gradient flex items-center justify-center p-4">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 border-4 border-[#c6a15b] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm font-serif-title uppercase tracking-wider text-stone-300">
-            {statusMsg || 'Connecting to Room...'}
-          </p>
+      <div className="min-h-screen bg-noir-gradient flex items-center justify-center p-4 select-none">
+        <div className="max-w-md w-full deco-panel p-6 sm:p-8 rounded-3xl text-center space-y-5 shadow-[0_0_50px_rgba(0,0,0,0.8)] border border-[#c6a15b]/40">
+          <div className="w-12 h-12 border-4 border-[#c6a15b] border-t-transparent rounded-full animate-spin mx-auto" />
+
+          <div className="space-y-1.5">
+            <h2 className="text-base sm:text-lg font-serif-title font-bold uppercase tracking-wider text-[#f5efe2]">
+              {statusMsg || 'Connecting to Room...'}
+            </h2>
+            <p className="text-xs text-stone-400">
+              Establishing real-time peer connection with the syndicate table.
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
+                  localStorage.removeItem(APP_NAV_STORAGE_KEY);
+                } catch {}
+                if (networkRef.current) {
+                  networkRef.current.destroy();
+                }
+                onBackHome();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl deco-gold-btn font-serif-title font-bold text-xs uppercase tracking-widest transition"
+            >
+              Return to Front Page
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
+                  localStorage.removeItem(APP_NAV_STORAGE_KEY);
+                  sessionStorage.removeItem(STORAGE_ROOM_KEY);
+                  localStorage.removeItem(STORAGE_ROOM_KEY);
+                } catch {}
+                if (networkRef.current) {
+                  networkRef.current.destroy();
+                }
+                onBackHome();
+              }}
+              className="w-full py-1.5 text-stone-500 hover:text-stone-300 text-[11px] font-serif-title uppercase tracking-wider transition"
+            >
+              Cancel & Clear Saved Game
+            </button>
+          </div>
         </div>
       </div>
     );
