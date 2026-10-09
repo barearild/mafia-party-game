@@ -432,35 +432,23 @@ export default function MultiDeviceMode({
                   )}
                 </button>
 
-                <div className="flex flex-col sm:flex-row gap-2 w-full">
-                  <a
-                    href={`/?tv=${code}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-stone-950/80 hover:bg-stone-900 border border-[#c6a15b]/25 text-stone-300 hover:text-[#e5c365] font-serif-title font-bold text-[11px] uppercase tracking-wider transition"
-                    title="Open a big-screen theater display on a TV, tablet, or laptop"
-                  >
-                    <Tv className="w-3.5 h-3.5 text-[#c6a15b]" />
-                    Open TV (New Tab)
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('tv', code);
-                        window.location.href = url.toString();
-                      } catch {
-                        window.location.href = `/?tv=${code}`;
-                      }
-                    }}
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-[#e5c365] font-serif-title font-bold text-[11px] uppercase tracking-wider transition"
-                    title="Switch this device into the TV Theater & Game Master display"
-                  >
-                    <Tv className="w-3.5 h-3.5 text-[#e5c365]" />
-                    Switch to TV (GM)
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('tv', code);
+                      window.location.href = url.toString();
+                    } catch {
+                      window.location.href = `/?tv=${code}`;
+                    }
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider transition shadow-sm"
+                  title="Switch this device into the TV Theater & Game Master display"
+                >
+                  <Tv className="w-4 h-4 text-[#e5c365]" />
+                  Switch this Screen to TV (GM)
+                </button>
               </div>
             </div>
 
