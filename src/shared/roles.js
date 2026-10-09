@@ -52,6 +52,9 @@ export const ROLES = {
     images: [
       '/cards/mafia.jpg',
       '/cards/mafia_alt1.jpg',
+      '/cards/mafia_alt2.jpg',
+      '/cards/mafia_alt3.jpg',
+      '/cards/mafia_alt4.jpg',
     ],
     color: 'text-red-400',
     bgColor: 'bg-red-950/60',
@@ -93,6 +96,11 @@ export const ROLES = {
     // Alternating illustrations used in-game
     images: [
       '/cards/detective.jpg?v=2',
+      '/cards/detective_alt1.jpg',
+      '/cards/detective_alt2.jpg',
+      '/cards/detective_alt3.jpg',
+      '/cards/detective_alt4.jpg',
+      '/cards/detective_alt5.jpg',
     ],
     color: 'text-sky-400',
     bgColor: 'bg-sky-950/60',
@@ -113,6 +121,11 @@ export const ROLES = {
     // Alternating illustrations used in-game
     images: [
       '/cards/villager.jpg',
+      '/cards/villager_alt1.jpg',
+      '/cards/villager_alt2.jpg',
+      '/cards/villager_alt3.jpg',
+      '/cards/villager_alt4.jpg',
+      '/cards/villager_alt5.jpg',
     ],
     color: 'text-amber-300',
     bgColor: 'bg-amber-950/40',
