@@ -30,6 +30,7 @@ import {
   Link2,
   Share2,
   Tv,
+  Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ROLES } from '../shared/roles.js';
