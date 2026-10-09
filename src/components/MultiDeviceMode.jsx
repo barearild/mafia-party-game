@@ -40,6 +40,8 @@ import {
   RoleSettingsEditor,
   ArtDecoCardBack,
 } from './RoleBadge.jsx';
+import TvTheaterMode from './TvTheaterMode.jsx';
+import { setGameUrl } from '../shared/urlUtils.js';
 
 function getOrCreatePlayerId() {
   let id =
@@ -55,9 +57,11 @@ function getOrCreatePlayerId() {
 
 export default function MultiDeviceMode({
   initialAction,
+  initialTvMode = false,
   onUpdateAction,
   onBackHome,
 }) {
+  const [isTvMode, setIsTvMode] = useState(initialTvMode);
   const [roomState, setRoomState] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [statusMsg, setStatusMsg] = useState('Connecting to Room...');
@@ -104,8 +108,10 @@ export default function MultiDeviceMode({
 
     if (action?.type === 'resume_host') {
       net.resumeHost(action.code);
+      setGameUrl({ roomCode: action.code, isTv: initialTvMode, mode: 'MULTI_DEVICE' });
     } else if (action?.type === 'create') {
       const roomCode = net.createRoom();
+      setGameUrl({ roomCode, isTv: initialTvMode, mode: 'MULTI_DEVICE' });
       if (onUpdateAction) {
         onUpdateAction({
           type: 'resume_host',
@@ -115,12 +121,20 @@ export default function MultiDeviceMode({
       }
     } else if (action?.type === 'join') {
       net.joinRoom(action.code);
+      setGameUrl({ roomCode: action.code, isTv: initialTvMode, mode: 'MULTI_DEVICE' });
     }
 
     return () => {
       net.destroy();
     };
   }, []);
+
+  // Continuously ensure the URL reflects the active game PIN and TV status
+  useEffect(() => {
+    if (roomState?.code) {
+      setGameUrl({ roomCode: roomState.code, isTv: isTvMode, mode: 'MULTI_DEVICE' });
+    }
+  }, [roomState?.code, isTvMode]);
 
   const copyTextToClipboard = async (text) => {
     if (!text) return false;
@@ -158,7 +172,7 @@ export default function MultiDeviceMode({
 
   const getDirectRoomUrl = () => {
     if (!roomState?.code) return window.location.origin;
-    return `${window.location.origin}/?room=${roomState.code}`;
+    return `${window.location.origin}/${roomState.code}`;
   };
 
   const copyRoomCode = async () => {
@@ -270,6 +284,19 @@ export default function MultiDeviceMode({
     );
   }
 
+  if (isTvMode && roomState) {
+    return (
+      <TvTheaterMode
+        roomState={roomState}
+        dispatch={(type, payload) => networkRef.current?.dispatch(type, payload)}
+        onExit={() => {
+          setIsTvMode(false);
+          setGameUrl({ roomCode: roomState.code, isTv: false, mode: 'MULTI_DEVICE' });
+        }}
+      />
+    );
+  }
+
   const {
     code,
     hostId,
@@ -319,7 +346,7 @@ export default function MultiDeviceMode({
   };
 
   const updateGmSettings = (partial) => {
-    if (!isHost) return;
+    if (!canControlFlow) return;
     socket.emit('update_settings', {
       settings: {
         ...settings,
@@ -480,13 +507,8 @@ export default function MultiDeviceMode({
                 <button
                   type="button"
                   onClick={() => {
-                    try {
-                      const url = new URL(window.location.href);
-                      url.searchParams.set('tv', code);
-                      window.location.href = url.toString();
-                    } catch {
-                      window.location.href = `/?tv=${code}`;
-                    }
+                    setIsTvMode(true);
+                    setGameUrl({ roomCode: code, isTv: true, mode: 'MULTI_DEVICE' });
                   }}
                   className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider transition shadow-sm"
                   title="Switch this device into the TV Theater & Game Master display"
@@ -829,10 +851,10 @@ export default function MultiDeviceMode({
                   onUpdateSettings={(nextSettings) =>
                     socket.emit('update_settings', { settings: nextSettings })
                   }
-                  isEditable={isHost}
+                  isEditable={canControlFlow}
                 />
 
-                {isHost ? (
+                {canControlFlow ? (
                   <button
                     type="button"
                     disabled={players.length < minPlayersRequired}

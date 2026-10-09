@@ -15,6 +15,7 @@ import { ArtDecoCardBack, RoleCard } from './components/RoleBadge.jsx';
 import SingleDeviceMode from './components/SingleDeviceMode.jsx';
 import MultiDeviceMode from './components/MultiDeviceMode.jsx';
 import TvTheaterMode from './components/TvTheaterMode.jsx';
+import { parseGameUrl, setGameUrl } from './shared/urlUtils.js';
 
 const APP_NAV_STORAGE_KEY = 'mafia_app_nav_v1';
 const SINGLE_DEVICE_STORAGE_KEY = 'mafia_single_device_state_v1';
@@ -40,7 +41,9 @@ function getSavedSingleDeviceSummary() {
 
 function getSavedHostRoomSummary() {
   try {
-    const raw = sessionStorage.getItem(STORAGE_ROOM_KEY);
+    const raw =
+      sessionStorage.getItem(STORAGE_ROOM_KEY) ||
+      localStorage.getItem(STORAGE_ROOM_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || !parsed.code || !parsed.hostId) return null;
@@ -59,64 +62,49 @@ function getSavedHostRoomSummary() {
   }
 }
 
-function getUrlRoomInviteCode() {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const code = (params.get('room') || '').toUpperCase().trim();
-    return code.length === 4 ? code : '';
-  } catch {
-    return '';
-  }
-}
-
-function getUrlTvCode() {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const code = (params.get('tv') || '').toUpperCase().trim();
-    return code.length === 4 ? code : '';
-  } catch {
-    return '';
-  }
-}
-
-function clearUrlRoomInviteParam() {
-  try {
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('room') || url.searchParams.has('tv')) {
-      url.searchParams.delete('room');
-      url.searchParams.delete('tv');
-      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
-    }
-  } catch {
-    // Ignore URL errors
-  }
-}
-
 function loadSavedNavState() {
-  const urlTv = getUrlTvCode();
-  if (urlTv) {
-    return { mode: 'TV_THEATER', tvCode: urlTv, multiAction: null, urlRoom: '' };
+  const urlInfo = parseGameUrl();
+  if (urlInfo.mode === 'PASS_AND_PLAY') {
+    return { mode: 'SINGLE_DEVICE', multiAction: null, initialTvMode: false, code: '' };
   }
 
-  const urlRoom = getUrlRoomInviteCode();
-  if (urlRoom) {
-    return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
+  if (urlInfo.roomCode) {
+    const code = urlInfo.roomCode;
+    const hostSummary = getSavedHostRoomSummary();
+    if (hostSummary && hostSummary.code === code) {
+      return {
+        mode: 'MULTI_DEVICE',
+        multiAction: { type: 'resume_host', code, name: hostSummary.hostName },
+        initialTvMode: urlInfo.isTv,
+        code,
+      };
+    }
+    let savedName = 'Player';
+    try {
+      savedName = localStorage.getItem('mafia_player_name') || 'Player';
+    } catch {}
+    return {
+      mode: 'MULTI_DEVICE',
+      multiAction: { type: 'join', code, name: savedName },
+      initialTvMode: urlInfo.isTv,
+      code,
+    };
   }
 
   // When visiting the root path, ALWAYS land on the Home page.
-  // Active games can be cleanly resumed via the quick return banner on the Home page.
-  return { mode: 'HOME', multiAction: null, urlRoom: '', tvCode: '' };
+  return { mode: 'HOME', multiAction: null, initialTvMode: false, code: '' };
 }
 
 export default function App() {
   const [savedNav] = useState(() => loadSavedNavState());
   const [mode, setMode] = useState(savedNav.mode);
   const [multiAction, setMultiAction] = useState(savedNav.multiAction);
-  const [invitedRoomCode, setInvitedRoomCode] = useState(savedNav.urlRoom || '');
+  const [initialTvMode, setInitialTvMode] = useState(savedNav.initialTvMode);
+  const [invitedRoomCode, setInvitedRoomCode] = useState(savedNav.code || '');
 
   const [hostName, setHostName] = useState('');
   const [joinName, setJoinName] = useState('');
-  const [joinCode, setJoinCode] = useState(savedNav.urlRoom || savedNav.tvCode || '');
+  const [joinCode, setJoinCode] = useState(savedNav.code || '');
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [dossierModalTab, setDossierModalTab] = useState('ROLES'); // 'ROLES' | 'RULES'
   const [selectedDossierRole, setSelectedDossierRole] = useState('MAFIA');
@@ -142,55 +130,61 @@ export default function App() {
     }
   }, [mode, multiAction, savedNav.tvCode, joinCode]);
 
-  // Initialize & listen to browser history so Back button returns to Front Page
+  // Initialize & listen to browser history so URL changes synchronize route state
   useEffect(() => {
-    const initialMode = savedNav.mode || 'HOME';
-    if (initialMode !== 'HOME') {
-      if (window.history.state?.mode !== initialMode) {
-        window.history.replaceState({ mode: 'HOME', showRulesModal: false }, '');
-        window.history.pushState({ mode: initialMode, showRulesModal: false }, '');
-      }
-    } else if (!window.history.state || !window.history.state.mode) {
-      window.history.replaceState({ mode: 'HOME', showRulesModal: false }, '');
-    }
-
-    const handlePopState = (e) => {
-      const st = e.state;
-      if (!st) {
+    const handlePopState = () => {
+      const urlInfo = parseGameUrl();
+      if (urlInfo.mode === 'HOME') {
         setShowRulesModal(false);
         setMode('HOME');
-        return;
+        setMultiAction(null);
+        setInitialTvMode(false);
+        setActiveHostRoom(getSavedHostRoomSummary());
+      } else if (urlInfo.mode === 'PASS_AND_PLAY') {
+        setShowRulesModal(false);
+        setMode('SINGLE_DEVICE');
+        setMultiAction(null);
+        setInitialTvMode(false);
+      } else if (urlInfo.roomCode) {
+        setShowRulesModal(false);
+        const code = urlInfo.roomCode;
+        const hostSummary = getSavedHostRoomSummary();
+        const action =
+          hostSummary && hostSummary.code === code
+            ? { type: 'resume_host', code, name: hostSummary.hostName }
+            : {
+                type: 'join',
+                code,
+                name: (localStorage.getItem('mafia_player_name') || 'Player'),
+              };
+        setMultiAction(action);
+        setJoinCode(code);
+        setInitialTvMode(urlInfo.isTv);
+        setMode('MULTI_DEVICE');
       }
-      setShowRulesModal(Boolean(st.showRulesModal));
-      setMode(st.mode || 'HOME');
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [savedNav.mode]);
+  }, []);
 
   const openDossierModal = (roleKey = null, tab = 'ROLES') => {
     if (roleKey) setSelectedDossierRole(roleKey);
     setDossierModalTab(tab);
     if (!showRulesModal) {
-      window.history.pushState({ mode: 'HOME', showRulesModal: true }, '');
       setShowRulesModal(true);
     }
   };
 
   const closeDossierModal = () => {
     setShowRulesModal(false);
-    if (window.history.state?.showRulesModal) {
-      window.history.back();
-    }
   };
 
   const enterSingleDevice = () => {
-    clearUrlRoomInviteParam();
     setInvitedRoomCode('');
     setShowRulesModal(false);
     setMode('SINGLE_DEVICE');
-    window.history.pushState({ mode: 'SINGLE_DEVICE', showRulesModal: false }, '');
+    setGameUrl({ mode: 'PASS_AND_PLAY' });
   };
 
   const resetAndEnterSingleDevice = () => {
@@ -215,29 +209,26 @@ export default function App() {
     enterSingleDevice();
   };
 
-  const enterMultiDevice = (action) => {
-    clearUrlRoomInviteParam();
+  const enterMultiDevice = (action, isTv = false) => {
     setInvitedRoomCode('');
     setShowRulesModal(false);
     setMultiAction(action);
+    setInitialTvMode(isTv);
     setMode('MULTI_DEVICE');
-    window.history.pushState({ mode: 'MULTI_DEVICE', showRulesModal: false }, '');
+    if (action?.code) {
+      setJoinCode(action.code);
+      setGameUrl({ roomCode: action.code, isTv, mode: 'MULTI_DEVICE' });
+    }
   };
 
   const navigateBackHome = () => {
-    clearUrlRoomInviteParam();
     setInvitedRoomCode('');
     setShowRulesModal(false);
     setMode('HOME');
     setMultiAction(null);
+    setInitialTvMode(false);
     setActiveHostRoom(getSavedHostRoomSummary());
-    try {
-      sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
-      localStorage.removeItem(APP_NAV_STORAGE_KEY);
-    } catch {}
-    if (window.history.state?.mode && window.history.state.mode !== 'HOME') {
-      window.history.back();
-    }
+    setGameUrl({ mode: 'HOME' });
   };
 
   const dossierRoleOrder = [
@@ -274,17 +265,25 @@ export default function App() {
   }, [showRulesModal, dossierModalTab]);
 
   if (mode === 'TV_THEATER') {
-    return (
-      <TvTheaterMode
-        roomCode={savedNav.tvCode || joinCode}
-        onExit={navigateBackHome}
-        onSwitchToPlayer={({ roomCode: code, playerName }) => {
-          enterMultiDevice({
+    const currentTvCode = savedNav.code || joinCode;
+    const hostSummary = getSavedHostRoomSummary();
+    const action =
+      hostSummary && hostSummary.code === currentTvCode
+        ? { type: 'resume_host', code: currentTvCode, name: hostSummary.hostName }
+        : {
             type: 'join',
-            code,
-            name: playerName,
-          });
+            code: currentTvCode,
+            name: 'Living Room TV',
+          };
+    return (
+      <MultiDeviceMode
+        initialAction={action}
+        initialTvMode={true}
+        onUpdateAction={(nextAction) => {
+          setMultiAction(nextAction);
+          if (nextAction?.code) setJoinCode(nextAction.code);
         }}
+        onBackHome={navigateBackHome}
       />
     );
   }
@@ -297,7 +296,14 @@ export default function App() {
     return (
       <MultiDeviceMode
         initialAction={multiAction}
-        onUpdateAction={setMultiAction}
+        initialTvMode={initialTvMode}
+        onUpdateAction={(nextAction) => {
+          setMultiAction(nextAction);
+          if (nextAction?.code) {
+            setJoinCode(nextAction.code);
+            setGameUrl({ roomCode: nextAction.code, isTv: initialTvMode, mode: 'MULTI_DEVICE' });
+          }
+        }}
         onBackHome={navigateBackHome}
       />
     );
@@ -314,23 +320,30 @@ export default function App() {
   const handleJoinRoom = (e) => {
     e.preventDefault();
     if (!joinCode.trim()) return;
-    enterMultiDevice({
-      type: 'join',
-      name: joinName.trim() || 'Player',
-      code: joinCode.trim().toUpperCase(),
-    });
+    enterMultiDevice(
+      {
+        type: 'join',
+        name: joinName.trim() || 'Player',
+        code: joinCode.trim().toUpperCase(),
+      },
+      false
+    );
   };
 
   const handleLaunchTvRoom = (e) => {
     if (e) e.preventDefault();
     if (!joinCode || joinCode.trim().length < 4) return;
     const code = joinCode.trim().toUpperCase();
-    clearUrlRoomInviteParam();
-    setInvitedRoomCode('');
-    setShowRulesModal(false);
-    setMode('TV_THEATER');
-    setJoinCode(code);
-    window.history.pushState({ mode: 'TV_THEATER', tvCode: code, showRulesModal: false }, '');
+    const hostSummary = getSavedHostRoomSummary();
+    const action =
+      hostSummary && hostSummary.code === code
+        ? { type: 'resume_host', code, name: hostSummary.hostName }
+        : {
+            type: 'join',
+            code,
+            name: 'Living Room TV',
+          };
+    enterMultiDevice(action, true);
   };
 
   return (
@@ -357,8 +370,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  clearUrlRoomInviteParam();
                   setInvitedRoomCode('');
+                  setGameUrl({ mode: 'HOME' });
                 }}
                 className="text-stone-400 hover:text-white p-1"
                 title="Dismiss invitation"

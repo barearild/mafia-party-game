@@ -95,16 +95,23 @@ export class P2PNetworkManager {
   _saveHostRoomToStorage() {
     if (!this.room || !this.roomCode) return;
     try {
-      sessionStorage.setItem(STORAGE_ROOM_KEY, JSON.stringify(this.room));
+      const payload = JSON.stringify(this.room);
+      sessionStorage.setItem(STORAGE_ROOM_KEY, payload);
+      localStorage.setItem(STORAGE_ROOM_KEY, payload);
     } catch {}
   }
 
   _loadHostRoomFromStorage(expectedCode) {
     try {
-      const raw = sessionStorage.getItem(STORAGE_ROOM_KEY);
+      const raw =
+        sessionStorage.getItem(STORAGE_ROOM_KEY) ||
+        localStorage.getItem(STORAGE_ROOM_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.code === expectedCode && parsed.hostId === this.playerId) {
+      if (parsed && parsed.code === expectedCode) {
+        if (parsed.hostId && parsed.hostId !== this.playerId) {
+          this.playerId = parsed.hostId;
+        }
         return parsed;
       }
     } catch {}
@@ -114,6 +121,7 @@ export class P2PNetworkManager {
   clearHostStorage() {
     try {
       sessionStorage.removeItem(STORAGE_ROOM_KEY);
+      localStorage.removeItem(STORAGE_ROOM_KEY);
     } catch {}
   }
 
@@ -126,10 +134,12 @@ export class P2PNetworkManager {
     if (!code) {
       // Check if we already have an active room stored for this session
       try {
-        const saved = sessionStorage.getItem(STORAGE_ROOM_KEY);
+        const saved =
+          sessionStorage.getItem(STORAGE_ROOM_KEY) ||
+          localStorage.getItem(STORAGE_ROOM_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed?.code && parsed?.hostId === this.playerId) {
+          if (parsed?.code && (parsed?.hostId === this.playerId || !parsed?.hostId)) {
             code = parsed.code;
             this.room = parsed;
           }
@@ -149,6 +159,9 @@ export class P2PNetworkManager {
       this.room = createInitialRoom(this.roomCode, this.playerId, this.playerName);
       this._saveHostRoomToStorage();
     }
+
+    // Immediately emit local state for zero latency UI rendering
+    this._broadcastRoom();
 
     this._initHostPeer();
     return this.roomCode;
@@ -213,6 +226,7 @@ export class P2PNetworkManager {
     if (saved) {
       this.roomCode = cleanCode;
       this.room = saved;
+      this._broadcastRoom();
     } else {
       return this.createRoom(cleanCode);
     }
@@ -480,7 +494,7 @@ export class P2PNetworkManager {
 
     switch (type) {
       case 'add_bot': {
-        if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
+        if (room.phase !== 'LOBBY' || !canControlGameFlow(room, senderPlayerId)) return;
         const usedNames = new Set(
           room.players.map((p) => p.name.replace(/\s*\(AI\)$/i, '').trim().toLowerCase())
         );
@@ -504,7 +518,7 @@ export class P2PNetworkManager {
       }
 
       case 'remove_player': {
-        if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
+        if (room.phase !== 'LOBBY' || !canControlGameFlow(room, senderPlayerId)) return;
         const targetId = payload.targetPlayerId;
         if (targetId === room.hostId) return;
         room.players = room.players.filter((p) => p.id !== targetId);
@@ -518,7 +532,7 @@ export class P2PNetworkManager {
       }
 
       case 'update_settings': {
-        if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
+        if (room.phase !== 'LOBBY' || !canControlGameFlow(room, senderPlayerId)) return;
         room.settings = { ...room.settings, ...payload.settings };
         syncRoleCountsIfAuto(room);
         this._saveHostRoomToStorage();
@@ -572,7 +586,7 @@ export class P2PNetworkManager {
       }
 
       case 'draw_random_gm': {
-        if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
+        if (room.phase !== 'LOBBY' || !canControlGameFlow(room, senderPlayerId)) return;
         const humans = room.players.filter((p) => !p.isBot && !p.isTvDisplay);
         const pool = humans.length > 0 ? humans : room.players.filter((p) => !p.isTvDisplay);
         const chosen = pool[Math.floor(Math.random() * pool.length)];
@@ -587,7 +601,7 @@ export class P2PNetworkManager {
       }
 
       case 'start_game': {
-        if (room.phase !== 'LOBBY' || senderPlayerId !== room.hostId) return;
+        if (room.phase !== 'LOBBY' || !canControlGameFlow(room, senderPlayerId)) return;
         const hasHumanGm = room.settings.gmMode && room.settings.gmMode !== 'NONE';
         const minRequired = hasHumanGm ? 5 : 4;
 

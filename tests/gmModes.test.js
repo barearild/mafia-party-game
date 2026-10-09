@@ -71,6 +71,11 @@ describe('GM Modes & Role Assignment Architecture', () => {
     assert.equal(canControlGameFlow(room, 'gm_player'), true);
     assert.equal(canControlGameFlow(room, 'regular_player'), false);
     assert.equal(canControlGameFlow(room, 'stranger_id'), false);
+
+    // Also allows assigned GM in settings during lobby
+    room.gameMasterId = null;
+    room.settings.assignedGmPlayerId = 'assigned_gm';
+    assert.equal(canControlGameFlow(room, 'assigned_gm'), true);
   });
 
   it('should dynamically balance recommended roles according to player counts', () => {

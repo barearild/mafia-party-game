@@ -5,17 +5,13 @@ import {
   Tv,
   Skull,
   Users,
-  Clock,
-  Sparkles,
   Trophy,
   AlertCircle,
   Vote,
-  Shield,
-  Search,
-  UserCheck,
-  Gamepad2,
-  X,
-  Volume2,
+  Bot,
+  Play,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { P2PNetworkManager } from '../network/P2PNetworkManager.js';
 import { ROLES } from '../shared/roles.js';
@@ -32,29 +28,36 @@ function getOrCreateTvPlayerId() {
   return id;
 }
 
-export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
-  const [roomState, setRoomState] = useState(null);
-  const [statusMsg, setStatusMsg] = useState(`Connecting TV to Room ${roomCode}...`);
+export default function TvTheaterMode({
+  roomCode: propRoomCode,
+  roomState: parentRoomState,
+  dispatch: parentDispatch,
+  onExit,
+}) {
+  const [internalRoomState, setInternalRoomState] = useState(null);
+  const [statusMsg, setStatusMsg] = useState('Connecting TV display...');
   const [errorMsg, setErrorMsg] = useState('');
-  const [showSwitchModal, setShowSwitchModal] = useState(false);
-  const [playerNameInput, setPlayerNameInput] = useState(() => {
-    try {
-      return localStorage.getItem('mafia_player_name') || '';
-    } catch {
-      return '';
-    }
-  });
+
+  const roomState = parentRoomState || internalRoomState;
+  const roomCode = propRoomCode || roomState?.code;
 
   const playerIdRef = useRef(getOrCreateTvPlayerId());
   const netRef = useRef(null);
 
   useEffect(() => {
+    // If parent supplies active roomState & dispatch, reuse that connection directly
+    if (parentRoomState && parentDispatch) {
+      return;
+    }
+
+    if (!roomCode) return;
+
     const net = new P2PNetworkManager({
       playerId: playerIdRef.current,
       playerName: 'Living Room TV',
       isTvDisplay: true,
       onStateUpdate: (state) => {
-        setRoomState(state);
+        setInternalRoomState(state);
       },
       onError: (err) => {
         setErrorMsg(err);
@@ -70,24 +73,13 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
     return () => {
       net.destroy();
     };
-  }, [roomCode]);
+  }, [roomCode, parentRoomState, parentDispatch]);
 
-  const handleConfirmSwitchToPlayer = () => {
-    const chosenName = (playerNameInput.trim() || 'Player');
-    try {
-      localStorage.setItem('mafia_player_name', chosenName);
-    } catch {}
-
-    if (netRef.current) {
-      netRef.current.dispatch('exit_tv_to_player', { playerName: chosenName });
-    }
-
-    setShowSwitchModal(false);
-
-    if (onSwitchToPlayer) {
-      onSwitchToPlayer({ roomCode, playerName: chosenName, playerId: playerIdRef.current });
-    } else if (onExit) {
-      onExit();
+  const handleDispatch = (type, payload) => {
+    if (parentDispatch) {
+      parentDispatch(type, payload);
+    } else if (netRef.current) {
+      netRef.current.dispatch(type, payload);
     }
   };
 
@@ -152,6 +144,14 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
   const eliminatedCitizens = players.filter((p) => !p.alive && !p.isGameMaster && p.role !== 'GAMEMASTER');
   const totalCitizens = livingCitizens.length + eliminatedCitizens.length;
 
+  const canControlFlow =
+    Boolean(roomState) &&
+    (Boolean(parentDispatch) ||
+      roomState.hostId === playerIdRef.current ||
+      roomState.gameMasterId === playerIdRef.current ||
+      roomState.settings?.assignedGmPlayerId === playerIdRef.current ||
+      roomState.me?.isGameMaster);
+
   return (
     <div className="min-h-screen bg-[#090807] text-[#f5efe2] flex flex-col justify-between p-6 sm:p-10 select-none overflow-hidden relative">
       {/* Background Ambience */}
@@ -186,18 +186,9 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
 
           <button
             type="button"
-            onClick={() => setShowSwitchModal(true)}
-            className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-[#e5c365] hover:text-white font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition shadow-sm"
-            title="Exit TV Mode and join the table as a normal player on this device"
-          >
-            <UserCheck className="w-4 h-4 text-[#e5c365]" />
-            <span className="hidden sm:inline">Join as Player</span>
-            <span className="sm:hidden">Play</span>
-          </button>
-
-          <button
             onClick={onExit}
-            className="text-xs text-stone-500 hover:text-stone-300 transition uppercase tracking-wider px-2 py-1"
+            className="px-4 py-2 sm:py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 border border-[#c6a15b]/40 hover:border-[#e5c365] text-stone-200 hover:text-white font-serif-title font-bold text-xs uppercase tracking-wider transition shadow-sm"
+            title="Exit TV mode and return to game admin panel"
           >
             Exit TV
           </button>
@@ -239,11 +230,53 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
                     >
                       <span>{p.name}</span>
                       {p.isBot && <span className="text-[10px] text-stone-400 font-mono">(AI)</span>}
+                      {p.isBot && canControlFlow && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDispatch('remove_player', {
+                              targetPlayerId: p.id,
+                            })
+                          }
+                          className="text-stone-400 hover:text-rose-400 p-0.5 ml-1 transition"
+                          title="Remove AI Bot"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
               </div>
             </div>
+
+            {/* Game Master Action Controls in Lobby */}
+            {canControlFlow && (
+              <div className="space-y-4 pt-1 max-w-xl mx-auto w-full">
+                <button
+                  type="button"
+                  disabled={livingCitizens.length < 4}
+                  onClick={() => handleDispatch('start_game')}
+                  className="w-full py-4 px-6 rounded-2xl deco-gold-btn disabled:opacity-40 font-serif-title font-black text-sm sm:text-base uppercase tracking-widest flex items-center justify-center gap-2.5 transition shadow-[0_0_30px_rgba(198,161,91,0.25)]"
+                >
+                  <Play className="w-5 h-5 fill-current" />
+                  {livingCitizens.length < 4
+                    ? `Need ${4 - livingCitizens.length} More Citizen(s) or Bots to Start`
+                    : `Start Game & Deal Roles (${livingCitizens.length} Citizens)`}
+                </button>
+
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleDispatch('add_bot')}
+                    className="px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-200 border border-[#c6a15b]/40 hover:border-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition"
+                  >
+                    <Bot className="w-4 h-4 text-[#e5c365]" />
+                    <span>+ Add AI Bot</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -262,6 +295,18 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
             <div className="text-sm font-serif-title uppercase tracking-widest text-[#e5c365] font-bold">
               {livingCitizens.filter((p) => p.ready).length} of {livingCitizens.length} Players Confirmed
             </div>
+            {canControlFlow && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleDispatch('host_force_advance')}
+                  className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
+                >
+                  <Moon className="w-4 h-4" />
+                  <span>Unlock Night 1 Now</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -282,6 +327,18 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
             <p className="text-base sm:text-lg text-stone-300 max-w-xl mx-auto leading-relaxed">
               Silent footsteps echo across the cobblestones. Secret syndicate operatives and protectors are making their moves in private on their phones.
             </p>
+            {canControlFlow && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleDispatch('host_force_advance')}
+                  className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
+                >
+                  <Sun className="w-4 h-4" />
+                  <span>Awaken Town • Resolve Night Actions</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -304,6 +361,18 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
                 </div>
               )}
             </div>
+            {canControlFlow && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleDispatch('host_force_advance')}
+                  className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
+                >
+                  <Sun className="w-4 h-4" />
+                  <span>Begin Town Deliberation</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -326,6 +395,27 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
                 ? 'Accusations fly across the table! Who is lying about where they were last night?'
                 : 'Cast your vote privately on your phone! Look up when finished.'}
             </p>
+            {canControlFlow && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleDispatch('host_force_advance')}
+                  className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
+                >
+                  {phase === 'DAY_DISCUSSION' ? (
+                    <>
+                      <Vote className="w-4 h-4" />
+                      <span>Call Town Vote Now</span>
+                    </>
+                  ) : (
+                    <>
+                      <Skull className="w-4 h-4" />
+                      <span>Tally Votes & Reveal Verdict</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -340,6 +430,18 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
                 {lastVoteReport?.outcomeText || 'The Town has spoken!'}
               </h2>
             </div>
+            {canControlFlow && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleDispatch('host_force_advance')}
+                  className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
+                >
+                  <Moon className="w-4 h-4" />
+                  <span>Night Falls (Round {round + 1})</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -353,6 +455,18 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
             <p className="text-lg text-stone-200 max-w-xl mx-auto">
               {winReason}
             </p>
+            {canControlFlow && (
+              <div className="pt-4">
+                <button
+                  type="button"
+                  onClick={() => handleDispatch('play_again')}
+                  className="py-3.5 px-8 rounded-2xl deco-gold-btn font-serif-title font-black text-xs sm:text-sm uppercase tracking-widest inline-flex items-center gap-2 transition shadow-[0_0_25px_rgba(198,161,91,0.3)]"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Play Again • Return to Lobby</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -371,65 +485,6 @@ export default function TvTheaterMode({ roomCode, onExit, onSwitchToPlayer }) {
           <span>This TV device serves as Game Master. Players play on their own phones.</span>
         </div>
       </footer>
-
-      {/* Switch to Player Modal */}
-      {showSwitchModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="max-w-md w-full deco-panel p-6 sm:p-8 space-y-5 rounded-3xl border border-[#c6a15b]/60 shadow-[0_0_50px_rgba(0,0,0,0.9)] text-left">
-            <div className="flex items-center justify-between border-b border-[#c6a15b]/30 pb-3">
-              <div className="flex items-center gap-3">
-                <UserCheck className="w-6 h-6 text-[#e5c365]" />
-                <div>
-                  <h3 className="text-lg font-serif-title font-bold uppercase tracking-wider text-[#f5efe2]">
-                    Join Table as Citizen
-                  </h3>
-                  <p className="text-xs text-stone-300">
-                    Exit TV Theater and take a normal player seat on this screen.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSwitchModal(false)}
-                className="text-stone-400 hover:text-white p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
-                Your Player Name
-              </label>
-              <input
-                type="text"
-                value={playerNameInput}
-                onChange={(e) => setPlayerNameInput(e.target.value)}
-                placeholder="e.g. Alex"
-                className="w-full rounded-xl bg-black/80 border border-[#c6a15b]/40 px-3.5 py-2.5 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#e5c365]"
-                autoFocus
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowSwitchModal(false)}
-                className="px-4 py-2 rounded-xl text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSwitchToPlayer}
-                className="px-5 py-2.5 rounded-xl deco-gold-btn text-black font-serif-title font-black text-xs uppercase tracking-widest transition"
-              >
-                Confirm & Join Table
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

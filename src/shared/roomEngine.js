@@ -363,5 +363,10 @@ export function resolveDayVoting(room) {
 }
 
 export function canControlGameFlow(room, playerId) {
-  return playerId === room.hostId || playerId === room.gameMasterId;
+  if (!room || !playerId) return false;
+  return (
+    playerId === room.hostId ||
+    playerId === room.gameMasterId ||
+    playerId === room.settings?.assignedGmPlayerId
+  );
 }
