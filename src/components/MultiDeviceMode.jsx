@@ -29,6 +29,7 @@ import {
   Cpu,
   Link2,
   Share2,
+  Tv,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ROLES } from '../shared/roles.js';
@@ -430,6 +431,17 @@ export default function MultiDeviceMode({
                     </>
                   )}
                 </button>
+
+                <a
+                  href={`/?tv=${code}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-1.5 rounded-xl bg-stone-950/80 hover:bg-stone-900 border border-[#c6a15b]/25 text-stone-300 hover:text-[#e5c365] font-serif-title font-bold text-[11px] uppercase tracking-wider transition"
+                  title="Open a big-screen theater display on a TV, tablet, or laptop"
+                >
+                  <Tv className="w-3.5 h-3.5 text-[#c6a15b]" />
+                  Open TV / Big Screen Display
+                </a>
               </div>
             </div>
 
@@ -548,6 +560,50 @@ export default function MultiDeviceMode({
                     </div>
                   </div>
                 )}
+
+                {hasHumanGmSetting && (
+                  <div className="pt-3 border-t border-[#c6a15b]/20 space-y-2">
+                    <div className="text-xs font-serif-title uppercase tracking-wider text-[#e5c365] font-bold flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-[#c6a15b]" />
+                      Night Narration Style:
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateGmSettings({ verbalNight: false })}
+                        className={`p-2.5 rounded-xl border text-left transition ${
+                          !settings.verbalNight
+                            ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2]'
+                            : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/40'
+                        }`}
+                      >
+                        <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-[#e5c365]">
+                          📱 Digital Night (Default)
+                        </div>
+                        <div className="text-[11px] text-stone-400 mt-0.5">
+                          Citizens submit secret night actions on their own phones.
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => updateGmSettings({ verbalNight: true })}
+                        className={`p-2.5 rounded-xl border text-left transition ${
+                          settings.verbalNight
+                            ? 'bg-[#c6a15b]/20 border-[#e5c365] text-[#f5efe2]'
+                            : 'bg-stone-900/80 border-[#c6a15b]/20 text-stone-300 hover:border-[#c6a15b]/40'
+                        }`}
+                      >
+                        <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-[#e5c365]">
+                          🗣️ Verbal Role-Drop (Tabletop)
+                        </div>
+                        <div className="text-[11px] text-stone-400 mt-0.5">
+                          Players inspect role once & pocket phone. GM narrates out loud.
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               /* Non-Host View: Clean Game Master Status Banner */
@@ -570,10 +626,23 @@ export default function MultiDeviceMode({
                             {players.find((p) => p.id === settings.assignedGmPlayerId)?.name ||
                               'Host'}
                           </span>
+                          {settings.verbalNight && (
+                            <span className="text-[#e5c365] ml-1.5 font-semibold">
+                              (🗣️ Verbal Night: Pocket phone after checking role)
+                            </span>
+                          )}
                         </>
                       )}
-                      {settings.gmMode === 'RANDOM' &&
-                        'Random Draw • A Game Master will be chosen at game start'}
+                      {settings.gmMode === 'RANDOM' && (
+                        <>
+                          Random Draw • A Game Master will be chosen at game start
+                          {settings.verbalNight && (
+                            <span className="text-[#e5c365] ml-1.5 font-semibold">
+                              (🗣️ Verbal Night)
+                            </span>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -940,6 +1009,137 @@ export default function MultiDeviceMode({
                           )}
                         </div>
                       </div>
+                      {/* If Verbal Mode is active, GM can directly tap targets on the tablet/phone while narrating aloud */}
+                      {settings.verbalNight && (
+                        <div className="p-4 rounded-xl bg-[#c6a15b]/15 border-2 border-[#e5c365] space-y-4">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-serif-title uppercase tracking-wider text-[#e5c365] font-bold flex items-center gap-1.5">
+                              🗣️ Verbal Script Controls (Narrate Aloud & Tap)
+                            </span>
+                            <span className="text-[11px] text-stone-300">
+                              Citizens are in face-down pocket mode
+                            </span>
+                          </div>
+
+                          {/* 1. Mafia Call */}
+                          <div className="p-3 rounded-lg bg-stone-900 border border-rose-500/30 space-y-2">
+                            <div className="text-xs font-bold text-rose-300 flex items-center justify-between">
+                              <span>1. &quot;Mafia, open your eyes and point to your victim...&quot;</span>
+                              {nightProgress.mafiaDone && <span className="text-emerald-400">✓ Target Selected</span>}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {citizenPlayers.map((p) => {
+                                const isMafiaAlly = p.role === 'MAFIA' || p.role === 'GODFATHER';
+                                if (!p.alive || isMafiaAlly) return null;
+                                const isTarget = Object.values(me.allMafiaVotes || {}).includes(p.id);
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() =>
+                                      socket.emit('gm_record_night_action', {
+                                        roleId: 'MAFIA',
+                                        targetId: p.id,
+                                      })
+                                    }
+                                    className={`px-2.5 py-1 rounded text-xs border transition ${
+                                      isTarget
+                                        ? 'bg-rose-900/90 border-rose-400 text-white font-bold'
+                                        : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-rose-400'
+                                    }`}
+                                  >
+                                    {p.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* 2. Doctor Call */}
+                          <div className="p-3 rounded-lg bg-stone-900 border border-emerald-500/30 space-y-2">
+                            <div className="text-xs font-bold text-emerald-300 flex items-center justify-between">
+                              <span>2. &quot;Doctor, wake up and point to who you wish to save...&quot;</span>
+                              {nightProgress.doctorDone && <span className="text-emerald-400">✓ Protected</span>}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {citizenPlayers.map((p) => {
+                                if (!p.alive) return null;
+                                const isTarget = me.myDoctorTarget === p.id;
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() =>
+                                      socket.emit('gm_record_night_action', {
+                                        roleId: 'DOCTOR',
+                                        targetId: p.id,
+                                      })
+                                    }
+                                    className={`px-2.5 py-1 rounded text-xs border transition ${
+                                      isTarget
+                                        ? 'bg-emerald-900/90 border-emerald-400 text-white font-bold'
+                                        : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-emerald-400'
+                                    }`}
+                                  >
+                                    {p.name}
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  socket.emit('gm_skip_night_role', { roleId: 'DOCTOR' })
+                                }
+                                className="px-2.5 py-1 rounded text-xs bg-stone-800 text-stone-400 hover:text-white border border-stone-700"
+                              >
+                                Skip Doctor
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 3. Detective Call */}
+                          <div className="p-3 rounded-lg bg-stone-900 border border-blue-500/30 space-y-2">
+                            <div className="text-xs font-bold text-blue-300 flex items-center justify-between">
+                              <span>3. &quot;Detective, wake up and point to a suspect...&quot;</span>
+                              {nightProgress.detectiveDone && <span className="text-emerald-400">✓ Inspected</span>}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {citizenPlayers.map((p) => {
+                                if (!p.alive) return null;
+                                const isTarget = me.myDetectiveTarget === p.id;
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() =>
+                                      socket.emit('gm_record_night_action', {
+                                        roleId: 'DETECTIVE',
+                                        targetId: p.id,
+                                      })
+                                    }
+                                    className={`px-2.5 py-1 rounded text-xs border transition ${
+                                      isTarget
+                                        ? 'bg-blue-900/90 border-blue-400 text-white font-bold'
+                                        : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-blue-400'
+                                    }`}
+                                  >
+                                    {p.name} ({ROLES[p.role]?.investigativeResult || 'INNOCENT'})
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  socket.emit('gm_skip_night_role', { roleId: 'DETECTIVE' })
+                                }
+                                className="px-2.5 py-1 rounded text-xs bg-stone-800 text-stone-400 hover:text-white border border-stone-700"
+                              >
+                                Skip Detective
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : !me.alive ? (
                     <div className="p-6 rounded-2xl bg-stone-950/90 border border-[#c6a15b]/25 text-center space-y-2">
@@ -951,6 +1151,29 @@ export default function MultiDeviceMode({
                         Watch silently from the afterlife as the living perform their night
                         actions.
                       </p>
+                    </div>
+                  ) : settings.verbalNight ? (
+                    /* VERBAL TABLETOP NIGHT — POCKET PHONE MODE */
+                    <div className="p-8 sm:p-10 rounded-2xl bg-[#090807] border-2 border-[#c6a15b]/35 text-center space-y-4 shadow-[inset_0_0_50px_rgba(0,0,0,0.85)]">
+                      <div className="w-16 h-16 rounded-full bg-[#c6a15b]/10 border border-[#c6a15b]/40 flex items-center justify-center mx-auto text-2xl">
+                        🤫
+                      </div>
+                      <div className="space-y-1.5">
+                        <h3 className="text-xl sm:text-2xl font-serif-title font-black uppercase tracking-wider text-[#f5efe2]">
+                          Town, Close Your Eyes
+                        </h3>
+                        <p className="text-xs sm:text-sm text-[#e5c365] font-serif-title uppercase tracking-widest font-bold">
+                          Verbal Tabletop Mode • Put your phone face-down
+                        </p>
+                      </div>
+                      <p className="text-xs sm:text-sm text-stone-400 max-w-md mx-auto leading-relaxed">
+                        The Game Master (<strong className="text-[#f5efe2]">{activeGmPlayer?.name || 'Narrator'}</strong>) is conducting the night aloud. Listen carefully and wake up only when your secret role is summoned!
+                      </p>
+                      <div className="pt-2">
+                        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-stone-900 border border-[#c6a15b]/25 text-xs text-stone-300">
+                          Your Secret Role: <strong className="text-[#e5c365]">{ROLES[me.role]?.name || me.role}</strong>
+                        </span>
+                      </div>
                     </div>
                   ) : isMafia ? (
                     /* MAFIA & GODFATHER NIGHT UI */

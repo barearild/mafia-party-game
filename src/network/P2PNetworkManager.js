@@ -659,6 +659,43 @@ export class P2PNetworkManager {
         break;
       }
 
+      case 'gm_record_night_action': {
+        if (room.phase !== 'NIGHT') return;
+        if (!canControlGameFlow(room, senderPlayerId)) return;
+        const participants = getActiveParticipants(room);
+        const targetId = payload.targetId;
+        const target = targetId ? participants.find((p) => p.id === targetId && p.alive) : null;
+
+        if (payload.roleId === 'MAFIA') {
+          if (target) {
+            // Assign target for all alive mafia
+            participants.forEach((m) => {
+              if (m.alive && (m.role === 'MAFIA' || m.role === 'GODFATHER')) {
+                room.nightActions.mafiaVotes[m.id] = target.id;
+              }
+            });
+          }
+        } else if (payload.roleId === 'DOCTOR') {
+          room.nightActions.doctorTarget = target ? target.id : null;
+          room.nightActions.doctorSubmitted = true;
+        } else if (payload.roleId === 'DETECTIVE') {
+          if (target) {
+            const detectivePlayer = participants.find((p) => p.alive && p.role === 'DETECTIVE');
+            if (detectivePlayer) {
+              performDetectiveInvestigation(room, detectivePlayer, target);
+            }
+          } else {
+            room.nightActions.detectiveTarget = null;
+            room.nightActions.detectiveSubmitted = true;
+          }
+        }
+
+        this._checkNightComplete();
+        this._saveHostRoomToStorage();
+        this._broadcastRoom();
+        break;
+      }
+
       case 'gm_skip_night_role': {
         if (room.phase !== 'NIGHT') return;
         if (!canControlGameFlow(room, senderPlayerId)) return;

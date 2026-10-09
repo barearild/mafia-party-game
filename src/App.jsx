@@ -13,6 +13,7 @@ import { ROLES } from './shared/roles.js';
 import { ArtDecoCardBack, RoleCard } from './components/RoleBadge.jsx';
 import SingleDeviceMode from './components/SingleDeviceMode.jsx';
 import MultiDeviceMode from './components/MultiDeviceMode.jsx';
+import TvTheaterMode from './components/TvTheaterMode.jsx';
 
 const APP_NAV_STORAGE_KEY = 'mafia_app_nav_v1';
 const SINGLE_DEVICE_STORAGE_KEY = 'mafia_single_device_state_v1';
@@ -67,11 +68,22 @@ function getUrlRoomInviteCode() {
   }
 }
 
+function getUrlTvCode() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const code = (params.get('tv') || '').toUpperCase().trim();
+    return code.length === 4 ? code : '';
+  } catch {
+    return '';
+  }
+}
+
 function clearUrlRoomInviteParam() {
   try {
     const url = new URL(window.location.href);
-    if (url.searchParams.has('room')) {
+    if (url.searchParams.has('room') || url.searchParams.has('tv')) {
       url.searchParams.delete('room');
+      url.searchParams.delete('tv');
       window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
     }
   } catch {
@@ -80,27 +92,32 @@ function clearUrlRoomInviteParam() {
 }
 
 function loadSavedNavState() {
+  const urlTv = getUrlTvCode();
+  if (urlTv) {
+    return { mode: 'TV_THEATER', tvCode: urlTv, multiAction: null, urlRoom: '' };
+  }
+
   const urlRoom = getUrlRoomInviteCode();
   try {
     const raw =
       sessionStorage.getItem(APP_NAV_STORAGE_KEY) ||
       localStorage.getItem(APP_NAV_STORAGE_KEY);
-    if (!raw) return { mode: 'HOME', multiAction: null, urlRoom };
+    if (!raw) return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
     const parsed = JSON.parse(raw);
     if (urlRoom) {
-      // If the user opened a direct invite link for a room they aren't already in, show the invite prompt on HOME
       if (parsed.mode === 'MULTI_DEVICE' && parsed.multiAction?.code === urlRoom) {
-        return { mode: 'MULTI_DEVICE', multiAction: parsed.multiAction, urlRoom: '' };
+        return { mode: 'MULTI_DEVICE', multiAction: parsed.multiAction, urlRoom: '', tvCode: '' };
       }
-      return { mode: 'HOME', multiAction: null, urlRoom };
+      return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
     }
     return {
       mode: parsed.mode || 'HOME',
       multiAction: parsed.multiAction || null,
       urlRoom: '',
+      tvCode: '',
     };
   } catch {
-    return { mode: 'HOME', multiAction: null, urlRoom };
+    return { mode: 'HOME', multiAction: null, urlRoom, tvCode: '' };
   }
 }
 
@@ -253,6 +270,10 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showRulesModal, dossierModalTab]);
+
+  if (mode === 'TV_THEATER') {
+    return <TvTheaterMode roomCode={savedNav.tvCode || joinCode} onExit={navigateBackHome} />;
+  }
 
   if (mode === 'SINGLE_DEVICE') {
     return <SingleDeviceMode onBackHome={navigateBackHome} />;

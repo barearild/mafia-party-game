@@ -29,6 +29,7 @@ export function createInitialRoom(code, hostPlayerId, hostName) {
       revealRoleOnDeath: true,
       autoCustomRoles: true,
       gmMode: 'NONE',
+      verbalNight: false,
       assignedGmPlayerId: hostPlayerId,
       roleCounts: getRecommendedRoleConfig(4),
     },
