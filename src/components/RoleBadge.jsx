@@ -528,6 +528,8 @@ export function RoleSettingsEditor({
   };
 
   if (!isEditable) {
+    const totalPlayers = Math.max(1, playerCount || totalAssigned);
+
     return (
       <div className="rounded-2xl deco-panel p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#c6a15b]/20 pb-3">
@@ -536,7 +538,7 @@ export function RoleSettingsEditor({
               Syndicate Role Deck
             </h3>
             <p className="text-xs text-stone-400">
-              Total Citizen Cards: {totalAssigned} / {Math.max(4, playerCount)} Citizens
+              Total Citizen Cards: {totalAssigned} / {Math.max(4, totalPlayers)} Citizens
             </p>
           </div>
           <span className="text-[11px] font-serif-title uppercase tracking-wider text-stone-400 px-2.5 py-1 rounded-full bg-stone-900 border border-stone-800">
@@ -575,7 +577,7 @@ export function RoleSettingsEditor({
                 </div>
 
                 <div className="px-2.5 py-1 rounded-lg bg-stone-900 border border-[#c6a15b]/30 text-xs font-bold font-serif-title text-[#e5c365]">
-                  {val} {val === 1 ? 'Card' : 'Cards'}
+                  {val}/{totalPlayers}
                 </div>
               </div>
             );
