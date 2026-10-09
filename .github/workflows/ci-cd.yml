@@ -1,0 +1,72 @@
+name: CI & Deployment Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      deploy_to_prod:
+        description: 'Deploy to Netlify Production after tests pass?'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  test:
+    name: Run Test Suite & Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Automated Test Suite
+        run: npm test
+
+      - name: Build Production Bundle Check
+        run: npm run build
+
+  deploy:
+    name: Deploy to Netlify Production
+    needs: test
+    # Only deploys if:
+    # 1. Manual trigger with deploy_to_prod == true, OR
+    # 2. Pushed a version tag (v*), OR
+    # 3. Main branch commit message contains '[deploy]'
+    if: >
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_to_prod) ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[deploy]'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Production Assets
+        run: npm run build
+
+      - name: Deploy to Netlify
+        run: npx netlify deploy --prod --dir=dist
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
