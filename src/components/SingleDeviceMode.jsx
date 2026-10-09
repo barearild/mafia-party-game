@@ -21,6 +21,7 @@ import {
   Wand2,
   Dices,
   UserCheck,
+  Users,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -40,14 +41,8 @@ import {
 
 const SINGLE_DEVICE_STORAGE_KEY = 'mafia_single_device_state_v1';
 
-const DEFAULT_PLAYERS = [
-  { id: 'p1', name: 'Alice', alive: true, role: null },
-  { id: 'p2', name: 'Bob', alive: true, role: null },
-  { id: 'p3', name: 'Charlie', alive: true, role: null },
-  { id: 'p4', name: 'Diana', alive: true, role: null },
-  { id: 'p5', name: 'Ethan', alive: true, role: null },
-  { id: 'p6', name: 'Fiona', alive: true, role: null },
-];
+const DEFAULT_PLAYERS = [];
+const LEGACY_DEFAULT_NAMES = new Set(['Alice', 'Bob', 'Charlie', 'Diana', 'Ethan', 'Fiona']);
 
 const DEFAULT_SETTINGS = {
   doctorSelfSave: false,
@@ -61,7 +56,20 @@ function loadSavedSingleDeviceState() {
   try {
     const raw = localStorage.getItem(SINGLE_DEVICE_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (parsed) {
+      // If saved state is still in SETUP with only the legacy default 6 players, start empty
+      if (
+        parsed.phase === 'SETUP' &&
+        Array.isArray(parsed.players) &&
+        parsed.players.length === 6 &&
+        parsed.players.every((p) => LEGACY_DEFAULT_NAMES.has(p.name))
+      ) {
+        return { ...parsed, players: [] };
+      }
+      return parsed;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -78,7 +86,7 @@ export default function SingleDeviceMode({ onBackHome }) {
   // Game Master Selection State
   // gmMode: 'ASSIGNED' (Pick a player from roster) | 'RANDOM' (Draw randomly from roster)
   const [gmMode, setGmMode] = useState(saved?.gmMode || 'RANDOM');
-  const [assignedGmId, setAssignedGmId] = useState(saved?.assignedGmId || 'p1');
+  const [assignedGmId, setAssignedGmId] = useState(saved?.assignedGmId || '');
   const [activeGameMaster, setActiveGameMaster] = useState(
     saved?.activeGameMaster || null
   );
@@ -165,7 +173,7 @@ export default function SingleDeviceMode({ onBackHome }) {
     setPlayers(DEFAULT_PLAYERS);
     setNewName('');
     setGmMode('RANDOM');
-    setAssignedGmId('p1');
+    setAssignedGmId('');
     setActiveGameMaster(null);
     setActiveCitizens([]);
     setSettings(DEFAULT_SETTINGS);
@@ -300,6 +308,11 @@ export default function SingleDeviceMode({ onBackHome }) {
         role: null,
       },
     ]);
+  };
+
+  const clearRoster = () => {
+    setPlayers([]);
+    setAssignedGmId('');
   };
 
   const removePlayer = (id) => {
@@ -715,22 +728,37 @@ export default function SingleDeviceMode({ onBackHome }) {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Player Roster */}
               <div className="lg:col-span-7 rounded-2xl deco-panel p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-[#c6a15b]/20 pb-3">
+                <div className="flex flex-wrap items-center justify-between border-b border-[#c6a15b]/20 pb-3 gap-2">
                   <div>
                     <h2 className="text-base font-serif-title font-bold uppercase tracking-wider text-[#f5efe2]">
                       Group Roster ({players.length} Total)
                     </h2>
                     <p className="text-xs text-stone-400">
-                      1 Game Master + {citizenCountInSetup} Citizens
+                      {players.length === 0
+                        ? 'Add players below to begin'
+                        : `1 Game Master + ${citizenCountInSetup} Citizens`}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={addSamplePlayer}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-[#e5c365] border border-[#c6a15b]/40 font-serif-title font-bold uppercase tracking-wider transition"
-                  >
-                    + Quick Add Name
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={addSamplePlayer}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-white border border-[#c6a15b]/40 font-serif-title font-bold uppercase tracking-wider transition"
+                      title="Quick add one test name"
+                    >
+                      + Quick Add Name
+                    </button>
+                    {players.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearRoster}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-stone-900 hover:bg-rose-950/40 text-stone-400 hover:text-rose-400 border border-stone-800 hover:border-rose-500/40 font-serif-title uppercase tracking-wider transition"
+                        title="Clear all players from roster"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <form onSubmit={addPlayer} className="flex gap-2">
@@ -751,42 +779,56 @@ export default function SingleDeviceMode({ onBackHome }) {
                 </form>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-                  {players.map((p, idx) => {
-                    const isDesignatedGm =
-                      gmMode === 'ASSIGNED' && assignedGmId === p.id;
-                    return (
-                      <div
-                        key={p.id}
-                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border ${
-                          isDesignatedGm
-                            ? 'bg-[#c6a15b]/15 border-[#e5c365]/60'
-                            : 'bg-stone-950/85 border-[#c6a15b]/20'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-6 h-6 rounded-full bg-stone-900 border border-[#c6a15b]/40 text-xs font-serif-title font-bold flex items-center justify-center text-[#e5c365] shrink-0">
-                            {idx + 1}
-                          </span>
-                          <span className="text-sm font-medium text-[#f5efe2] truncate">
-                            {p.name}
-                          </span>
-                          {isDesignatedGm && (
-                            <span className="text-[10px] px-2 py-0.5 rounded bg-[#c6a15b]/25 text-[#e5c365] border border-[#c6a15b]/50 font-serif-title font-bold uppercase tracking-wider shrink-0">
-                              GM
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removePlayer(p.id)}
-                          className="text-stone-400 hover:text-rose-400 p-1 transition"
-                          title="Remove player"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                  {players.length === 0 ? (
+                    <div className="col-span-full py-8 px-4 rounded-xl border border-dashed border-[#c6a15b]/30 bg-stone-950/50 text-center space-y-2">
+                      <div className="w-10 h-10 rounded-full bg-[#c6a15b]/10 border border-[#c6a15b]/30 flex items-center justify-center mx-auto text-[#e5c365]">
+                        <Users className="w-5 h-5" />
                       </div>
-                    );
-                  })}
+                      <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-stone-300">
+                        Roster is Empty
+                      </div>
+                      <p className="text-[11px] text-stone-400 max-w-sm mx-auto">
+                        Type names above to add players, or tap <span className="text-[#e5c365] font-semibold">&ldquo;+ Quick Add Name&rdquo;</span> to quickly add players.
+                      </p>
+                    </div>
+                  ) : (
+                    players.map((p, idx) => {
+                      const isDesignatedGm =
+                        gmMode === 'ASSIGNED' && assignedGmId === p.id;
+                      return (
+                        <div
+                          key={p.id}
+                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border ${
+                            isDesignatedGm
+                              ? 'bg-[#c6a15b]/15 border-[#e5c365]/60'
+                              : 'bg-stone-950/85 border-[#c6a15b]/20'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-6 h-6 rounded-full bg-stone-900 border border-[#c6a15b]/40 text-xs font-serif-title font-bold flex items-center justify-center text-[#e5c365] shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="text-sm font-medium text-[#f5efe2] truncate">
+                              {p.name}
+                            </span>
+                            {isDesignatedGm && (
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-[#c6a15b]/25 text-[#e5c365] border border-[#c6a15b]/50 font-serif-title font-bold uppercase tracking-wider shrink-0">
+                                GM
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removePlayer(p.id)}
+                            className="text-stone-400 hover:text-rose-400 p-1 transition"
+                            title="Remove player"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
                 {players.length < minPlayersNeeded && (

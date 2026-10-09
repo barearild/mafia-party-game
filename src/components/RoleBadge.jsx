@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   Sparkles,
   Wand2,
+  EyeOff,
 } from 'lucide-react';
 import { ROLES, getRoleImage } from '../shared/roles.js';
 
@@ -55,7 +56,47 @@ export function ArtDecoCardBack({
   subtitle = 'Tap to Inspect Confidential Dossier',
   onClick,
   buttonLabel,
+  compact = false,
 }) {
+  if (compact) {
+    return (
+      <div className="rounded-2xl deco-panel p-3 border-2 border-[#c6a15b]/50 select-none">
+        <div
+          onClick={onClick}
+          className={`p-3 rounded-xl bg-stone-950/90 border border-[#c6a15b]/30 flex items-center justify-between gap-3 ${
+            onClick ? 'cursor-pointer hover:border-[#c6a15b] transition' : ''
+          }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-[#141210] border border-[#c6a15b]/60 flex items-center justify-center shrink-0">
+              <EyeOff className="w-5 h-5 text-[#c6a15b]" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-serif-title uppercase tracking-widest text-[#c6a15b]">
+                Confidential Identity
+              </div>
+              <div className="text-sm font-serif-title font-bold text-[#f5efe2] truncate">
+                {playerName || 'Role Hidden'}
+              </div>
+              <div className="text-[11px] text-stone-400 truncate">
+                {subtitle || 'Tap to reveal role'}
+              </div>
+            </div>
+          </div>
+          {buttonLabel && (
+            <button
+              type="button"
+              onClick={onClick}
+              className="px-3 py-1.5 rounded-lg deco-gold-btn text-xs font-serif-title font-bold uppercase tracking-wider shrink-0 transition"
+            >
+              {buttonLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-[310px]">
       {/* Card Container — identical outer dimensions to RoleCard */}
@@ -156,6 +197,7 @@ export function RoleCard({
   onAction,
   imageUrl,
   variantIndex,
+  onClick,
 }) {
   const role = ROLES[roleId];
   if (!role) return null;
@@ -163,7 +205,12 @@ export function RoleCard({
 
   if (compact) {
     return (
-      <div className="rounded-2xl bg-[#efe6d5] text-[#181615] p-2.5 shadow-2xl border-2 border-[#c6a15b]/60">
+      <div
+        onClick={onClick}
+        className={`rounded-2xl bg-[#efe6d5] text-[#181615] p-2.5 shadow-2xl border-2 border-[#c6a15b]/60 ${
+          onClick ? 'cursor-pointer hover:border-[#f0cf85] transition-all' : ''
+        }`}
+      >
         <div className="rounded-xl border-2 border-[#1b1917] p-3 flex items-center gap-3.5 bg-[#f5efe2]">
           <div className="w-16 h-20 rounded-lg overflow-hidden border-2 border-[#1b1917] shrink-0 shadow-md bg-stone-900">
             <img
@@ -198,7 +245,12 @@ export function RoleCard({
   return (
     <div className="mx-auto w-full max-w-[310px]">
       {/* Cream Tarot Card Stock — identical outer dimensions to ArtDecoCardBack */}
-      <div className="w-full h-[clamp(360px,56vh,420px)] rounded-[24px] bg-gradient-to-b from-[#f5efe2] via-[#efe5d2] to-[#e5d8c0] p-3.5 shadow-[0_25px_60px_rgba(0,0,0,0.95)] border-2 border-[#d6c7ad] text-[#181615] select-none flex flex-col">
+      <div
+        onClick={onClick}
+        className={`w-full h-[clamp(360px,56vh,420px)] rounded-[24px] bg-gradient-to-b from-[#f5efe2] via-[#efe5d2] to-[#e5d8c0] p-3.5 shadow-[0_25px_60px_rgba(0,0,0,0.95)] border-2 border-[#d6c7ad] text-[#181615] select-none flex flex-col ${
+          onClick ? 'cursor-pointer hover:border-[#f0cf85] transition-all group' : ''
+        }`}
+      >
         {/* Outer Thick Ink Art Deco Frame */}
         <div className="relative flex-1 min-h-0 rounded-[16px] border-[3px] border-[#1c1a17] p-2.5 flex flex-col justify-between bg-[#f4ece0]">
           {/* Top Left & Right Circular Art Deco Corner Rivets */}

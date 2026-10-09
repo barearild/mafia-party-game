@@ -37,6 +37,27 @@ describe('GM Modes & Role Assignment Architecture', () => {
     assert.equal(citizenCount, 5);
   });
 
+  it('should automatically treat TV display device as GM and exclude it from active participants', () => {
+    const room = createTestRoom({
+      roster: [
+        { id: 'tv_screen', name: 'Living Room TV', isTvDisplay: true, role: 'GAMEMASTER' },
+        { id: 'p1', name: 'Alice', role: 'GODFATHER' },
+        { id: 'p2', name: 'Bob', role: 'MAFIA' },
+        { id: 'p3', name: 'Charlie', role: 'DOCTOR' },
+        { id: 'p4', name: 'Diana', role: 'DETECTIVE' },
+      ],
+      gameMasterId: 'tv_screen',
+      settings: { gmMode: 'ASSIGNED' },
+    });
+
+    const participants = getActiveParticipants(room);
+    assert.equal(participants.length, 4);
+    assert.equal(participants.some((p) => p.id === 'tv_screen'), false);
+
+    const citizenCount = getExpectedCitizenCount(room);
+    assert.equal(citizenCount, 4);
+  });
+
   it('should count all players as active participants in AI GM mode (NONE)', () => {
     const room = createTestRoom({
       roster: [

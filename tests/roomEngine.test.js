@@ -5,6 +5,7 @@ import {
   resolveDayVoting,
   performDetectiveInvestigation,
   checkWinCondition,
+  buildStateForPlayer,
 } from '../src/shared/roomEngine.js';
 import { createTestRoom, advanceToNextNight } from './fixtures.js';
 
@@ -173,5 +174,56 @@ describe('Room Engine — Multi-Round Happy Path & Core Mechanics', () => {
     // Godfather deceives and gives INNOCENT
     performDetectiveInvestigation(room, detective, godfather);
     assert.equal(detective.investigations[3].result, 'INNOCENT');
+  });
+
+  it('should require all living mafia to explicitly confirm before marking mafiaDone', () => {
+    const room = createTestRoom({
+      roster: [
+        { id: 'p1', name: 'Alice', role: 'GODFATHER' },
+        { id: 'p2', name: 'Bob', role: 'MAFIA' },
+        { id: 'p3', name: 'Charlie', role: 'DOCTOR' },
+        { id: 'p4', name: 'Diana', role: 'DETECTIVE' },
+      ],
+    });
+
+    // Both mafia vote, but neither confirmed yet
+    room.nightActions.mafiaVotes = { p1: 'p3', p2: 'p3' };
+    room.nightActions.mafiaConfirmed = {};
+    let state = buildStateForPlayer(room, 'p1');
+    assert.equal(state.nightProgress.mafiaDone, false);
+    assert.equal(state.me.isMafiaConfirmed, false);
+
+    // One mafia confirms
+    room.nightActions.mafiaConfirmed['p1'] = true;
+    state = buildStateForPlayer(room, 'p1');
+    assert.equal(state.nightProgress.mafiaDone, false);
+    assert.equal(state.me.isMafiaConfirmed, true);
+
+    // Both mafia confirm
+    room.nightActions.mafiaConfirmed['p2'] = true;
+    state = buildStateForPlayer(room, 'p1');
+    assert.equal(state.nightProgress.mafiaDone, true);
+  });
+
+  it('should allow detective to investigate without prematurely submitting when autoSubmit is false', () => {
+    const room = createTestRoom({
+      roster: [
+        { id: 'p1', name: 'Alice', role: 'GODFATHER' },
+        { id: 'p2', name: 'Diana', role: 'DETECTIVE' },
+      ],
+    });
+
+    const detective = room.players.find((p) => p.id === 'p2');
+    const godfather = room.players.find((p) => p.id === 'p1');
+
+    performDetectiveInvestigation(room, detective, godfather, false);
+    assert.equal(room.nightActions.detectiveSubmitted, false);
+    assert.equal(detective.investigations.length, 1);
+    assert.equal(detective.investigations[0].result, 'INNOCENT');
+
+    const state = buildStateForPlayer(room, 'p2');
+    assert.equal(state.me.detectiveSubmitted, false);
+    assert.equal(state.nightProgress.detectiveDone, false);
+    assert.equal(state.me.investigations.length, 1);
   });
 });

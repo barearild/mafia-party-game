@@ -37,9 +37,24 @@ export default function TvTheaterMode({
   const [internalRoomState, setInternalRoomState] = useState(null);
   const [statusMsg, setStatusMsg] = useState('Connecting TV display...');
   const [errorMsg, setErrorMsg] = useState('');
+  const [secondsLeft, setSecondsLeft] = useState(0);
 
   const roomState = parentRoomState || internalRoomState;
   const roomCode = propRoomCode || roomState?.code;
+
+  useEffect(() => {
+    if (!roomState?.phaseExpiresAt) {
+      setSecondsLeft(0);
+      return;
+    }
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((roomState.phaseExpiresAt - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 250);
+    return () => clearInterval(interval);
+  }, [roomState?.phaseExpiresAt, roomState?.phase]);
 
   const playerIdRef = useRef(getOrCreateTvPlayerId());
   const netRef = useRef(null);
@@ -292,8 +307,13 @@ export default function TvTheaterMode({
             <p className="text-base text-stone-300 leading-relaxed">
               Look down at your phone screens! Keep your card hidden from your neighbors. Tap ready once you know your identity.
             </p>
-            <div className="text-sm font-serif-title uppercase tracking-widest text-[#e5c365] font-bold">
-              {livingCitizens.filter((p) => p.ready).length} of {livingCitizens.length} Players Confirmed
+            <div className="space-y-1">
+              <div className="text-sm font-serif-title uppercase tracking-widest text-[#e5c365] font-bold">
+                {livingCitizens.filter((p) => p.ready).length} of {livingCitizens.length} Players Confirmed
+              </div>
+              <p className="text-xs text-stone-400">
+                Night 1 begins automatically once all citizens confirm their secret identity
+              </p>
             </div>
             {canControlFlow && (
               <div className="pt-2">
@@ -303,7 +323,7 @@ export default function TvTheaterMode({
                   className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
                 >
                   <Moon className="w-4 h-4" />
-                  <span>Unlock Night 1 Now</span>
+                  <span>Unlock Night 1 Early</span>
                 </button>
               </div>
             )}
@@ -327,6 +347,10 @@ export default function TvTheaterMode({
             <p className="text-base sm:text-lg text-stone-300 max-w-xl mx-auto leading-relaxed">
               Silent footsteps echo across the cobblestones. Secret syndicate operatives and protectors are making their moves in private on their phones.
             </p>
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-stone-950/90 border border-[#c6a15b]/30 text-xs text-[#e5c365]">
+              <Moon className="w-3.5 h-3.5" />
+              <span>Dawn breaks automatically once all night moves are submitted</span>
+            </div>
             {canControlFlow && (
               <div className="pt-2">
                 <button
@@ -335,7 +359,7 @@ export default function TvTheaterMode({
                   className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
                 >
                   <Sun className="w-4 h-4" />
-                  <span>Awaken Town • Resolve Night Actions</span>
+                  <span>Awaken Town Early • Resolve Night Actions</span>
                 </button>
               </div>
             )}
@@ -361,6 +385,17 @@ export default function TvTheaterMode({
                 </div>
               )}
             </div>
+
+            {secondsLeft > 0 ? (
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                <span>Town Deliberation starts automatically in {secondsLeft}s</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                <span>Opening town deliberation...</span>
+              </div>
+            )}
+
             {canControlFlow && (
               <div className="pt-2">
                 <button
@@ -369,7 +404,7 @@ export default function TvTheaterMode({
                   className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
                 >
                   <Sun className="w-4 h-4" />
-                  <span>Begin Town Deliberation</span>
+                  <span>Begin Town Deliberation Now</span>
                 </button>
               </div>
             )}
@@ -395,6 +430,33 @@ export default function TvTheaterMode({
                 ? 'Accusations fly across the table! Who is lying about where they were last night?'
                 : 'Cast your vote privately on your phone! Look up when finished.'}
             </p>
+
+            {phase === 'DAY_DISCUSSION' && (
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-3 px-6 py-2.5 rounded-2xl bg-stone-950 border-2 border-[#c6a15b]/50 shadow-[0_0_25px_rgba(198,161,91,0.2)]">
+                  <span className="text-xs font-serif-title uppercase tracking-widest text-stone-400">Discussion Timer:</span>
+                  <span className="text-2xl sm:text-3xl font-mono font-black text-[#e5c365]">
+                    {Math.floor(secondsLeft / 60)}:{(secondsLeft % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+                <p className="text-xs text-stone-400">
+                  Town vote begins automatically when timer runs out, or tap below to vote early
+                </p>
+              </div>
+            )}
+
+            {phase === 'DAY_VOTING' && (
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-stone-950/90 border border-[#c6a15b]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                  <Vote className="w-3.5 h-3.5" />
+                  <span>{livingCitizens.filter((p) => p.hasVotedDay).length} of {livingCitizens.length} Votes Cast</span>
+                </div>
+                <p className="text-xs text-stone-400">
+                  Verdicts resolve automatically once all living citizens cast their votes
+                </p>
+              </div>
+            )}
+
             {canControlFlow && (
               <div className="pt-2">
                 <button
@@ -405,12 +467,12 @@ export default function TvTheaterMode({
                   {phase === 'DAY_DISCUSSION' ? (
                     <>
                       <Vote className="w-4 h-4" />
-                      <span>Call Town Vote Now</span>
+                      <span>Call Town Vote Now (Skip Timer)</span>
                     </>
                   ) : (
                     <>
                       <Skull className="w-4 h-4" />
-                      <span>Tally Votes & Reveal Verdict</span>
+                      <span>Tally Votes Early & Reveal Verdict</span>
                     </>
                   )}
                 </button>
@@ -430,6 +492,17 @@ export default function TvTheaterMode({
                 {lastVoteReport?.outcomeText || 'The Town has spoken!'}
               </h2>
             </div>
+
+            {secondsLeft > 0 ? (
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                <span>Night falls automatically in {secondsLeft}s</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                <span>Night is falling...</span>
+              </div>
+            )}
+
             {canControlFlow && (
               <div className="pt-2">
                 <button
@@ -438,7 +511,7 @@ export default function TvTheaterMode({
                   className="py-3 px-6 rounded-2xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center gap-2 transition shadow-lg"
                 >
                   <Moon className="w-4 h-4" />
-                  <span>Night Falls (Round {round + 1})</span>
+                  <span>Night Falls Now (Skip Timer)</span>
                 </button>
               </div>
             )}

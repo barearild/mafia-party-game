@@ -102,8 +102,20 @@ export default function App() {
   const [initialTvMode, setInitialTvMode] = useState(savedNav.initialTvMode);
   const [invitedRoomCode, setInvitedRoomCode] = useState(savedNav.code || '');
 
-  const [hostName, setHostName] = useState('');
-  const [joinName, setJoinName] = useState('');
+  const [hostName, setHostName] = useState(() => {
+    try {
+      return localStorage.getItem('mafia_player_name') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [joinName, setJoinName] = useState(() => {
+    try {
+      return localStorage.getItem('mafia_player_name') || '';
+    } catch {
+      return '';
+    }
+  });
   const [joinCode, setJoinCode] = useState(savedNav.code || '');
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [dossierModalTab, setDossierModalTab] = useState('ROLES'); // 'ROLES' | 'RULES'
@@ -210,6 +222,11 @@ export default function App() {
   };
 
   const enterMultiDevice = (action, isTv = false) => {
+    if (action?.name && !isTv && action.name !== 'Player' && action.name !== 'Living Room TV') {
+      try {
+        localStorage.setItem('mafia_player_name', action.name.trim());
+      } catch {}
+    }
     setInvitedRoomCode('');
     setShowRulesModal(false);
     setMultiAction(action);

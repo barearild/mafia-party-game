@@ -5,22 +5,25 @@ import {
   assignAlternatingRoleImages,
 } from './roles.js';
 
-export function createInitialRoom(code, hostPlayerId, hostName) {
+export function createInitialRoom(code, hostPlayerId, hostName, isTv = false) {
   return {
     code,
     hostId: hostPlayerId,
-    gameMasterId: null,
+    gameMasterId: isTv ? hostPlayerId : null,
     phase: 'LOBBY',
     round: 0,
+    phaseExpiresAt: null,
     players: [
       {
         id: hostPlayerId,
-        name: (hostName || 'Host').trim(),
+        name: (hostName || (isTv ? 'Living Room TV' : 'Host')).trim(),
         isBot: false,
         connected: true,
         alive: true,
-        role: null,
-        ready: false,
+        role: isTv ? 'GAMEMASTER' : null,
+        isGameMaster: Boolean(isTv),
+        isTvDisplay: Boolean(isTv),
+        ready: Boolean(isTv),
         investigations: [],
       },
     ],
@@ -28,13 +31,14 @@ export function createInitialRoom(code, hostPlayerId, hostName) {
       doctorSelfSave: true,
       revealRoleOnDeath: true,
       autoCustomRoles: true,
-      gmMode: 'NONE',
+      gmMode: isTv ? 'ASSIGNED' : 'NONE',
       verbalNight: false,
-      assignedGmPlayerId: hostPlayerId,
+      assignedGmPlayerId: isTv ? hostPlayerId : null,
       roleCounts: getRecommendedRoleConfig(4),
     },
     nightActions: {
       mafiaVotes: {},
+      mafiaConfirmed: {},
       doctorTarget: null,
       detectiveTarget: null,
       detectiveSubmitted: false,
@@ -53,13 +57,13 @@ export function createInitialRoom(code, hostPlayerId, hostName) {
 export function getActiveParticipants(room) {
   const gmId = room.gameMasterId;
   return room.players.filter(
-    (p) => p.id !== gmId && p.role !== 'GAMEMASTER' && !p.isGameMaster
+    (p) => p.id !== gmId && p.role !== 'GAMEMASTER' && !p.isGameMaster && !p.isTvDisplay
   );
 }
 
 export function getExpectedCitizenCount(room) {
   const gmPlayersCount = room.players.filter(
-    (p) => p.isGameMaster || p.role === 'GAMEMASTER' || p.id === room.gameMasterId
+    (p) => p.isGameMaster || p.role === 'GAMEMASTER' || p.id === room.gameMasterId || p.isTvDisplay
   ).length;
   const hasHumanGm = room.settings.gmMode && room.settings.gmMode !== 'NONE';
   const gmCount = Math.max(gmPlayersCount, hasHumanGm ? 1 : 0);
@@ -123,12 +127,12 @@ export function checkWinCondition(room) {
 export function buildStateForPlayer(room, playerId) {
   const me = room.players.find((p) => p.id === playerId);
   const isMafia = me && (me.role === 'MAFIA' || me.role === 'GODFATHER');
-  const isGM = me && (me.role === 'GAMEMASTER' || room.gameMasterId === me.id);
+  const isGM = me && (me.role === 'GAMEMASTER' || room.gameMasterId === me.id || Boolean(me.isTvDisplay));
   const isGameOver = room.phase === 'GAME_OVER';
 
   const publicPlayers = room.players.map((p) => {
     let visibleRole = null;
-    if (p.role === 'GAMEMASTER') {
+    if (p.role === 'GAMEMASTER' || p.isTvDisplay) {
       visibleRole = 'GAMEMASTER';
     } else if (isGameOver || isGM) {
       visibleRole = p.role;
@@ -148,7 +152,8 @@ export function buildStateForPlayer(room, playerId) {
       alive: p.alive,
       ready: p.ready,
       role: visibleRole,
-      isGameMaster: p.role === 'GAMEMASTER' || room.gameMasterId === p.id,
+      isGameMaster: p.role === 'GAMEMASTER' || room.gameMasterId === p.id || Boolean(p.isTvDisplay),
+      isTvDisplay: Boolean(p.isTvDisplay),
       hasVotedDay: Boolean(room.dayVotes[p.id]),
       dayVoteTarget:
         room.phase === 'DAY_VOTING' || isGM ? room.dayVotes[p.id] || null : null,
@@ -164,9 +169,13 @@ export function buildStateForPlayer(room, playerId) {
 
   const mafiaAllVoted =
     aliveMafia.length > 0 &&
-    aliveMafia.every((m) => Boolean(room.nightActions.mafiaVotes[m.id]));
-  const doctorDone = !aliveDoctor || room.nightActions.doctorSubmitted;
-  const detectiveDone = !aliveDetective || room.nightActions.detectiveSubmitted;
+    aliveMafia.every(
+      (m) =>
+        Boolean(room.nightActions.mafiaVotes?.[m.id]) &&
+        Boolean(room.nightActions.mafiaConfirmed?.[m.id])
+    );
+  const doctorDone = !aliveDoctor || Boolean(room.nightActions.doctorSubmitted);
+  const detectiveDone = !aliveDetective || Boolean(room.nightActions.detectiveSubmitted);
 
   return {
     code: room.code,
@@ -174,6 +183,7 @@ export function buildStateForPlayer(room, playerId) {
     gameMasterId: room.gameMasterId,
     phase: room.phase,
     round: room.round,
+    phaseExpiresAt: room.phaseExpiresAt || null,
     settings: room.settings,
     players: publicPlayers,
     me: me
@@ -184,11 +194,14 @@ export function buildStateForPlayer(room, playerId) {
           role: me.role,
           roleImage: me.roleImage || null,
           roleVariantIndex: me.roleVariantIndex ?? null,
-          isGameMaster: Boolean(isGM),
+          isGameMaster: Boolean(isGM || me.isTvDisplay),
+          isTvDisplay: Boolean(me.isTvDisplay),
           ready: me.ready,
           investigations: me.investigations || [],
           myMafiaVote: isMafia ? room.nightActions.mafiaVotes[me.id] || null : null,
+          isMafiaConfirmed: isMafia ? Boolean(room.nightActions.mafiaConfirmed?.[me.id]) : false,
           allMafiaVotes: isMafia || isGM ? room.nightActions.mafiaVotes : null,
+          allMafiaConfirmed: isMafia || isGM ? (room.nightActions.mafiaConfirmed || {}) : {},
           mafiaChat: isMafia || isGM ? room.mafiaChat : [],
           myDoctorTarget:
             me.role === 'DOCTOR' || isGM ? room.nightActions.doctorTarget : null,
@@ -220,11 +233,22 @@ export function buildStateForPlayer(room, playerId) {
   };
 }
 
-export function performDetectiveInvestigation(room, detectivePlayer, targetPlayer) {
+export function performDetectiveInvestigation(
+  room,
+  detectivePlayer,
+  targetPlayer,
+  autoSubmit = true
+) {
   room.nightActions.detectiveTarget = targetPlayer.id;
-  room.nightActions.detectiveSubmitted = true;
+  if (autoSubmit) {
+    room.nightActions.detectiveSubmitted = true;
+  }
   const roleObj = ROLES[targetPlayer.role];
   const result = roleObj ? roleObj.investigativeResult : 'INNOCENT';
+
+  if (!detectivePlayer.investigations) {
+    detectivePlayer.investigations = [];
+  }
   detectivePlayer.investigations.push({
     round: room.round,
     targetId: targetPlayer.id,

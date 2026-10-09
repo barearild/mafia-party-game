@@ -31,6 +31,7 @@ import {
   Share2,
   Tv,
   Sparkles,
+  Edit2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ROLES } from '../shared/roles.js';
@@ -67,10 +68,27 @@ export default function MultiDeviceMode({
   const [statusMsg, setStatusMsg] = useState('Connecting to Room...');
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [hideMyRole, setHideMyRole] = useState(false);
+  const [hideMyRole, setHideMyRole] = useState(true);
   const [chatInput, setChatInput] = useState('');
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [isEditingMyName, setIsEditingMyName] = useState(false);
+  const [editingNameInput, setEditingNameInput] = useState('');
   const playerIdRef = useRef(getOrCreatePlayerId());
   const networkRef = useRef(null);
+
+  useEffect(() => {
+    if (!roomState?.phaseExpiresAt) {
+      setSecondsLeft(0);
+      return;
+    }
+    const update = () => {
+      const diff = Math.max(0, Math.ceil((roomState.phaseExpiresAt - Date.now()) / 1000));
+      setSecondsLeft(diff);
+    };
+    update();
+    const iv = setInterval(update, 500);
+    return () => clearInterval(iv);
+  }, [roomState?.phaseExpiresAt]);
 
   // socket-compatible wrapper so all existing socket.emit calls remain 100% compatible
   const socket = {
@@ -86,13 +104,36 @@ export default function MultiDeviceMode({
 
   useEffect(() => {
     const action = initialAction;
+    let fallbackName = 'Player';
+    try {
+      const stored = localStorage.getItem('mafia_player_name');
+      if (stored && stored.trim() && stored.trim().toLowerCase() !== 'player') {
+        fallbackName = stored.trim();
+      }
+    } catch {}
+    const resolvedName =
+      action?.name && action.name.trim().toLowerCase() !== 'player'
+        ? action.name.trim()
+        : initialTvMode
+        ? 'Living Room TV'
+        : fallbackName;
+
     const net = new P2PNetworkManager({
       playerId: playerIdRef.current,
-      playerName: action?.name || 'Player',
+      playerName: resolvedName,
+      isTvDisplay: initialTvMode,
       onStateUpdate: (state) => {
+        if (state?.me?.name && !state.me.isTvDisplay && state.me.name.trim().toLowerCase() !== 'player') {
+          try {
+            localStorage.setItem('mafia_player_name', state.me.name.trim());
+          } catch {}
+        }
         setRoomState((prev) => {
           if (prev?.phase !== 'GAME_OVER' && state?.phase === 'GAME_OVER') {
             confetti({ particleCount: 100, spread: 75, origin: { y: 0.6 } });
+          }
+          if (prev?.phase === 'LOBBY' && state?.phase === 'ROLE_REVEAL') {
+            setHideMyRole(true);
           }
           return state;
         });
@@ -116,18 +157,32 @@ export default function MultiDeviceMode({
         onUpdateAction({
           type: 'resume_host',
           code: roomCode,
-          name: action.name || 'Host',
+          name: action.name || (initialTvMode ? 'Living Room TV' : 'Host'),
         });
       }
     } else if (action?.type === 'join') {
       net.joinRoom(action.code);
       setGameUrl({ roomCode: action.code, isTv: initialTvMode, mode: 'MULTI_DEVICE' });
+      if (onUpdateAction) {
+        onUpdateAction({
+          type: 'join',
+          code: action.code,
+          name: resolvedName,
+        });
+      }
     }
 
     return () => {
       net.destroy();
     };
   }, []);
+
+  // Register TV GM whenever TV mode is active
+  useEffect(() => {
+    if (isTvMode && networkRef.current) {
+      networkRef.current.dispatch('register_tv_gm');
+    }
+  }, [isTvMode]);
 
   // Continuously ensure the URL reflects the active game PIN and TV status
   useEffect(() => {
@@ -291,6 +346,7 @@ export default function MultiDeviceMode({
         dispatch={(type, payload) => networkRef.current?.dispatch(type, payload)}
         onExit={() => {
           setIsTvMode(false);
+          networkRef.current?.dispatch('exit_tv_to_player');
           setGameUrl({ roomCode: roomState.code, isTv: false, mode: 'MULTI_DEVICE' });
         }}
       />
@@ -303,6 +359,7 @@ export default function MultiDeviceMode({
     gameMasterId,
     phase,
     round,
+    phaseExpiresAt,
     settings,
     players,
     me,
@@ -330,6 +387,9 @@ export default function MultiDeviceMode({
     (p) => p.role === 'MAFIA' || p.role === 'GODFATHER'
   );
   const alivePlayers = citizenPlayers.filter((p) => p.alive);
+  const livingMafia = citizenPlayers.filter(
+    (p) => p.alive && (p.role === 'MAFIA' || p.role === 'GODFATHER')
+  );
 
   const hasHumanGmSetting = settings.gmMode && settings.gmMode !== 'NONE';
   const expectedCitizensInLobby = Math.max(
@@ -427,17 +487,18 @@ export default function MultiDeviceMode({
               <button
                 type="button"
                 onClick={() => setHideMyRole((h) => !h)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-900 border border-[#c6a15b]/30 text-xs text-[#f5efe2] hover:border-[#c6a15b]/60 transition shrink-0"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900 border border-[#c6a15b]/40 text-xs font-serif-title uppercase tracking-wider text-[#f5efe2] hover:border-[#e5c365] transition shrink-0"
+                title={hideMyRole ? 'Reveal Secret Role' : 'Hide Secret Role'}
               >
                 {hideMyRole ? (
                   <>
                     <Eye className="w-3.5 h-3.5 text-[#e5c365]" />
-                    <span className="hidden sm:inline">Show Role</span>
+                    <span>Reveal Role</span>
                   </>
                 ) : (
                   <>
                     <EyeOff className="w-3.5 h-3.5 text-rose-400" />
-                    <span className="hidden sm:inline">Hide Role</span>
+                    <span>Hide Role</span>
                   </>
                 )}
               </button>
@@ -508,6 +569,7 @@ export default function MultiDeviceMode({
                   type="button"
                   onClick={() => {
                     setIsTvMode(true);
+                    networkRef.current?.dispatch('register_tv_gm');
                     setGameUrl({ roomCode: code, isTv: true, mode: 'MULTI_DEVICE' });
                   }}
                   className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-wider transition shadow-sm"
@@ -776,9 +838,53 @@ export default function MultiDeviceMode({
                               p.connected ? 'bg-emerald-400' : 'bg-stone-600'
                             }`}
                           />
-                          <span className="font-semibold text-sm text-[#f5efe2] truncate">
-                            {p.name}
-                          </span>
+                          {p.id === me.id && isEditingMyName ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const clean = editingNameInput.trim();
+                                if (clean) {
+                                  socket.emit('update_player_name', { name: clean });
+                                  try {
+                                    localStorage.setItem('mafia_player_name', clean);
+                                  } catch {}
+                                }
+                                setIsEditingMyName(false);
+                              }}
+                              className="flex items-center gap-1.5"
+                            >
+                              <input
+                                type="text"
+                                autoFocus
+                                value={editingNameInput}
+                                onChange={(e) => setEditingNameInput(e.target.value)}
+                                className="px-2 py-0.5 rounded bg-black border border-[#e5c365] text-xs text-white max-w-[110px]"
+                              />
+                              <button
+                                type="submit"
+                                className="text-[10px] px-2 py-0.5 rounded deco-gold-btn font-serif-title font-bold uppercase tracking-wider"
+                              >
+                                Save
+                              </button>
+                            </form>
+                          ) : (
+                            <span className="font-semibold text-sm text-[#f5efe2] truncate flex items-center gap-1.5">
+                              {p.name}
+                              {p.id === me.id && !p.isTvDisplay && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingNameInput(p.name);
+                                    setIsEditingMyName(true);
+                                  }}
+                                  className="text-stone-400 hover:text-[#e5c365] transition p-0.5"
+                                  title="Edit your name"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </span>
+                          )}
                           {isDesignatedGm && (
                             <span className="text-[10px] px-2 py-0.5 rounded bg-[#c6a15b]/25 text-[#e5c365] border border-[#c6a15b]/50 font-serif-title font-bold uppercase tracking-wider">
                               GM
@@ -911,16 +1017,22 @@ export default function MultiDeviceMode({
                   {hideMyRole ? (
                     <ArtDecoCardBack
                       playerName={me.name}
-                      subtitle="Role Hidden (Privacy Shield) — Tap to Flip"
+                      subtitle="Secret Role Hidden for Privacy — Click Below to Inspect"
+                      buttonLabel="Reveal Role"
                       onClick={() => setHideMyRole(false)}
                     />
                   ) : (
-                    <RoleCard
-                      roleId={me.role}
-                      imageUrl={me.roleImage}
-                      variantIndex={me.roleVariantIndex}
-                      fellowMafia={isMafia ? fellowMafia : []}
-                    />
+                    <div>
+                      <RoleCard
+                        roleId={me.role}
+                        imageUrl={me.roleImage}
+                        variantIndex={me.roleVariantIndex}
+                        fellowMafia={isMafia ? fellowMafia : []}
+                        actionLabel="Hide Role"
+                        onAction={() => setHideMyRole(true)}
+                        onClick={() => setHideMyRole(true)}
+                      />
+                    </div>
                   )}
 
                   {isGM && (
@@ -945,14 +1057,19 @@ export default function MultiDeviceMode({
                   {!me.ready ? (
                     <button
                       type="button"
-                      onClick={() => socket.emit('player_ready_role')}
+                      onClick={() => {
+                        setHideMyRole(true);
+                        socket.emit('player_ready_role');
+                      }}
                       className="w-full py-4 rounded-2xl deco-gold-btn font-serif-title font-black uppercase tracking-widest text-sm sm:text-base transition"
                     >
                       I Understand My Role — Ready for Night 1
                     </button>
                   ) : (
                     <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-500/35 text-center text-sm font-serif-title uppercase tracking-wider text-emerald-300">
-                      ✓ You are ready! Waiting for remaining players...
+                      {secondsLeft > 0
+                        ? `All players ready! Night 1 begins in ${secondsLeft}s...`
+                        : '✓ You are ready! Waiting for remaining players...'}
                     </div>
                   )}
                 </div>
@@ -999,6 +1116,13 @@ export default function MultiDeviceMode({
                       </span>
                     </div>
                   </div>
+
+                  {secondsLeft > 0 && (
+                    <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-center text-xs font-serif-title uppercase tracking-widest text-emerald-300 flex items-center justify-center gap-2 animate-pulse">
+                      <Moon className="w-4 h-4" />
+                      <span>All night actions confirmed. Dawn breaks in {secondsLeft}s...</span>
+                    </div>
+                  )}
 
                   {/* GAME MASTER LIVE NIGHT MONITOR */}
                   {isGM ? (
@@ -1250,9 +1374,23 @@ export default function MultiDeviceMode({
                         The Game Master (<strong className="text-[#f5efe2]">{activeGmPlayer?.name || 'Narrator'}</strong>) is conducting the night aloud. Listen carefully and wake up only when your secret role is summoned!
                       </p>
                       <div className="pt-2">
-                        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-stone-900 border border-[#c6a15b]/25 text-xs text-stone-300">
-                          Your Secret Role: <strong className="text-[#e5c365]">{ROLES[me.role]?.name || me.role}</strong>
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setHideMyRole((h) => !h)}
+                          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-stone-900 border border-[#c6a15b]/35 hover:border-[#c6a15b] text-xs text-stone-300 transition"
+                          title="Click to toggle role visibility"
+                        >
+                          <span className="font-serif-title uppercase tracking-wider text-xs">Your Secret Role:</span>
+                          {hideMyRole ? (
+                            <span className="text-stone-400 font-mono tracking-widest flex items-center gap-1.5">
+                              •••••• <Eye className="w-3.5 h-3.5 text-[#e5c365]" />
+                            </span>
+                          ) : (
+                            <strong className="text-[#e5c365] flex items-center gap-1.5">
+                              {ROLES[me.role]?.name || me.role} <EyeOff className="w-3.5 h-3.5 text-rose-400" />
+                            </strong>
+                          )}
+                        </button>
                       </div>
                     </div>
                   ) : isMafia ? (
@@ -1260,14 +1398,14 @@ export default function MultiDeviceMode({
                     <div className="space-y-5">
                       <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/35 text-sm text-rose-200">
                         <strong className="text-rose-300 font-serif-title uppercase tracking-wider">Syndicate Strike:</strong> Choose a target to eliminate
-                        tonight. The Godfather breaks any tie votes.
+                        tonight. All living Mafia must lock in and confirm to sleep.
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {citizenPlayers.map((p) => {
                           const isMafiaAlly =
                             p.role === 'MAFIA' || p.role === 'GODFATHER';
-                          const isDisabled = !p.alive || isMafiaAlly;
+                          const isDisabled = !p.alive || isMafiaAlly || me.isMafiaConfirmed;
                           const selected = me.myMafiaVote === p.id;
                           const votesForThisPlayer = Object.entries(
                             me.allMafiaVotes || {}
@@ -1286,7 +1424,7 @@ export default function MultiDeviceMode({
                               onClick={() =>
                                 socket.emit('night_action', { targetId: p.id })
                               }
-                              className={`p-3.5 rounded-xl border text-left transition flex items-center justify-between disabled:opacity-35 disabled:cursor-not-allowed ${
+                              className={`p-3.5 rounded-xl border text-left transition flex items-center justify-between disabled:opacity-40 disabled:cursor-not-allowed ${
                                 selected
                                   ? 'bg-rose-600/25 border-rose-500 text-[#f5efe2] shadow-[0_0_20px_rgba(225,29,72,0.2)]'
                                   : 'bg-stone-950/85 border-[#c6a15b]/25 text-stone-200 hover:border-[#c6a15b]/60'
@@ -1318,6 +1456,51 @@ export default function MultiDeviceMode({
                             </button>
                           );
                         })}
+                      </div>
+
+                      {/* Mafia Confirmation Action Bar */}
+                      <div className="p-4 rounded-xl bg-stone-950/90 border border-rose-500/35 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-rose-400">
+                              Syndicate Readiness
+                            </div>
+                            <div className="text-xs text-stone-300 mt-0.5">
+                              {livingMafia.filter((m) => me.allMafiaConfirmed?.[m.id]).length} of {livingMafia.length} Mafia confirmed & sleeping
+                            </div>
+                          </div>
+
+                          {me.isMafiaConfirmed ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-serif-title uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" /> Target Locked
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => socket.emit('unconfirm_night_action')}
+                                className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-rose-500/40 text-rose-300 text-xs font-serif-title uppercase tracking-wider font-bold transition"
+                              >
+                                Change Target
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!me.myMafiaVote}
+                              onClick={() => socket.emit('confirm_night_action')}
+                              className="px-5 py-2.5 rounded-xl deco-gold-btn disabled:opacity-40 font-serif-title font-black uppercase tracking-wider text-xs transition flex items-center gap-2 shadow-[0_0_15px_rgba(225,29,72,0.3)]"
+                            >
+                              <Moon className="w-4 h-4" />
+                              <span>Confirm Target & Sleep</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {!me.myMafiaVote && !me.isMafiaConfirmed && (
+                          <p className="text-[11px] text-stone-400 italic">
+                            Select a citizen target above, then click &quot;Confirm Target &amp; Sleep&quot;.
+                          </p>
+                        )}
                       </div>
 
                       {/* Secret Mafia Night Chat */}
@@ -1364,13 +1547,13 @@ export default function MultiDeviceMode({
                     <div className="space-y-4">
                       <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/35 text-sm text-emerald-200">
                         <strong className="text-emerald-300 font-serif-title uppercase tracking-wider">Medical Protection:</strong> Choose one citizen to protect
-                        from a Mafia attack tonight.
+                        from a Mafia attack tonight. Confirm when ready to sleep.
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {citizenPlayers.map((p) => {
                           const disabledSelf =
                             !settings.doctorSelfSave && p.id === me.id;
-                          const isDisabled = !p.alive || disabledSelf;
+                          const isDisabled = !p.alive || disabledSelf || me.doctorSubmitted;
                           const selected = me.myDoctorTarget === p.id;
                           return (
                             <button
@@ -1380,7 +1563,7 @@ export default function MultiDeviceMode({
                               onClick={() =>
                                 socket.emit('night_action', { targetId: p.id })
                               }
-                              className={`p-3.5 rounded-xl border text-left transition flex items-center justify-between disabled:opacity-35 disabled:cursor-not-allowed ${
+                              className={`p-3.5 rounded-xl border text-left transition flex items-center justify-between disabled:opacity-40 disabled:cursor-not-allowed ${
                                 selected
                                   ? 'bg-emerald-600/25 border-emerald-400 text-[#f5efe2] shadow-[0_0_20px_rgba(16,185,129,0.2)]'
                                   : 'bg-stone-950/85 border-[#c6a15b]/25 text-stone-200 hover:border-[#c6a15b]/60'
@@ -1406,6 +1589,53 @@ export default function MultiDeviceMode({
                           );
                         })}
                       </div>
+
+                      {/* Doctor Confirmation Bar */}
+                      <div className="p-4 rounded-xl bg-stone-950/90 border border-emerald-500/35 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-emerald-400">
+                              Medical Order
+                            </div>
+                            <div className="text-xs text-stone-300 mt-0.5">
+                              {me.myDoctorTarget
+                                ? `Protecting: ${players.find((p) => p.id === me.myDoctorTarget)?.name}`
+                                : 'No citizen selected yet'}
+                            </div>
+                          </div>
+
+                          {me.doctorSubmitted ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-serif-title uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" /> Protection Confirmed
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => socket.emit('unconfirm_night_action')}
+                                className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-emerald-500/40 text-emerald-300 text-xs font-serif-title uppercase tracking-wider font-bold transition"
+                              >
+                                Change Target
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!me.myDoctorTarget}
+                              onClick={() => socket.emit('confirm_night_action')}
+                              className="px-5 py-2.5 rounded-xl deco-gold-btn disabled:opacity-40 font-serif-title font-black uppercase tracking-wider text-xs transition flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                            >
+                              <Shield className="w-4 h-4" />
+                              <span>Confirm Protection & Sleep</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {!me.myDoctorTarget && !me.doctorSubmitted && (
+                          <p className="text-[11px] text-stone-400 italic">
+                            Select a citizen to protect above, then click &quot;Confirm Protection &amp; Sleep&quot;.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   ) : me.role === 'DETECTIVE' ? (
                     /* DETECTIVE NIGHT UI */
@@ -1416,71 +1646,99 @@ export default function MultiDeviceMode({
                         Innocent!)
                       </div>
 
-                      {!me.detectiveSubmitted ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {citizenPlayers.map((p) => {
-                            const isSelf = p.id === me.id;
-                            const isDisabled = !p.alive || isSelf;
-                            return (
-                              <button
-                                key={p.id}
-                                type="button"
-                                disabled={isDisabled}
-                                onClick={() =>
-                                  socket.emit('night_action', { targetId: p.id })
-                                }
-                                className="p-3.5 rounded-xl border bg-stone-950/85 border-[#c6a15b]/25 text-stone-200 hover:border-[#e5c365] disabled:opacity-35 disabled:cursor-not-allowed text-left transition flex items-center justify-between"
-                              >
-                                <span className="font-semibold text-sm flex items-center gap-1.5">
-                                  <span className={!p.alive ? 'line-through text-stone-500' : 'text-[#f5efe2]'}>
-                                    {p.name}
-                                  </span>
-                                  {isSelf && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#c6a15b]/20 text-[#e5c365] border border-[#c6a15b]/35 font-serif-title uppercase tracking-wider">
-                                      Detective (Awake)
-                                    </span>
-                                  )}
-                                  {!p.alive && <span>💀</span>}
-                                </span>
-                                <Search className="w-4 h-4 text-[#e5c365]" />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="p-4 rounded-xl bg-stone-950/90 border border-[#c6a15b]/45 text-center space-y-1">
-                          <div className="text-xs font-serif-title uppercase tracking-wider text-[#e5c365] font-bold">
-                            Investigation Complete
-                          </div>
-                          {me.investigations.length > 0 && (
-                            <div className="text-base font-bold text-[#f5efe2]">
-                              {
-                                me.investigations[me.investigations.length - 1]
-                                  .targetName
-                              }{' '}
-                              appears:{' '}
-                              <span
-                                className={
-                                  me.investigations[me.investigations.length - 1]
-                                    .result === 'MAFIA'
-                                    ? 'text-rose-400'
-                                    : 'text-emerald-400'
-                                }
-                              >
-                                {
-                                  me.investigations[me.investigations.length - 1]
-                                    .result
-                                }
-                              </span>
+                      {/* 1. Choose Suspect (if not chosen yet) */}
+                      {(() => {
+                        const currentRoundInv = (me.investigations || []).find((inv) => inv.round === round);
+                        return !currentRoundInv ? (
+                          <div className="space-y-2">
+                            <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-[#e5c365]">
+                              Choose Suspect to Inspect:
                             </div>
-                          )}
-                        </div>
-                      )}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {citizenPlayers.map((p) => {
+                                const isSelf = p.id === me.id;
+                                const isDisabled = !p.alive || isSelf;
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    disabled={isDisabled}
+                                    onClick={() =>
+                                      socket.emit('night_action', { targetId: p.id })
+                                    }
+                                    className="p-3.5 rounded-xl border bg-stone-950/85 border-[#c6a15b]/25 text-stone-200 hover:border-[#e5c365] disabled:opacity-35 disabled:cursor-not-allowed text-left transition flex items-center justify-between"
+                                  >
+                                    <span className="font-semibold text-sm flex items-center gap-1.5">
+                                      <span className={!p.alive ? 'line-through text-stone-500' : 'text-[#f5efe2]'}>
+                                        {p.name}
+                                      </span>
+                                      {isSelf && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#c6a15b]/20 text-[#e5c365] border border-[#c6a15b]/35 font-serif-title uppercase tracking-wider">
+                                          Detective (Awake)
+                                        </span>
+                                      )}
+                                      {!p.alive && <span>💀</span>}
+                                    </span>
+                                    <Search className="w-4 h-4 text-[#e5c365]" />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          /* 2. Suspect Finding Card & Done Button */
+                          <div className="space-y-4">
+                            <div className="p-6 rounded-2xl bg-stone-950/95 border-2 border-[#c6a15b]/60 text-center space-y-3 shadow-[0_0_30px_rgba(198,161,91,0.2)]">
+                              <div className="text-xs font-serif-title uppercase tracking-widest text-[#e5c365] font-black">
+                                Detective Case Finding • Night {round}
+                              </div>
+                              <div className="text-xl sm:text-2xl font-serif-title font-bold text-[#f5efe2]">
+                                {currentRoundInv.targetName} appears:
+                              </div>
+                              <div className="inline-block px-6 py-2.5 rounded-xl text-lg sm:text-xl font-serif-title font-black uppercase tracking-widest border border-[#c6a15b]/40 bg-stone-900 shadow-lg">
+                                <span className={currentRoundInv.result === 'MAFIA' ? 'text-rose-400' : 'text-emerald-400'}>
+                                  {currentRoundInv.result}
+                                </span>
+                              </div>
+                              <p className="text-xs text-stone-300 max-w-md mx-auto leading-relaxed">
+                                {currentRoundInv.result === 'MAFIA'
+                                  ? 'Confirmed operative of the Mafia Syndicate!'
+                                  : 'Does not appear to belong to the Mafia. (Note: The Godfather appears Innocent!)'}
+                              </p>
+                            </div>
+
+                            {!me.detectiveSubmitted ? (
+                              <div className="p-4 rounded-xl bg-stone-950/90 border border-[#c6a15b]/40 space-y-2 text-center">
+                                <p className="text-xs text-stone-300">
+                                  Take your time to memorize this outcome. When you have committed it to memory, click below to sleep:
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => socket.emit('confirm_night_action')}
+                                  className="w-full py-4 px-6 rounded-xl deco-gold-btn font-serif-title font-black uppercase tracking-wider text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(198,161,91,0.3)]"
+                                >
+                                  <Moon className="w-4 h-4" />
+                                  <span>I Have Memorized This Result — Done / Sleep</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-center space-y-1">
+                                <div className="text-xs font-serif-title uppercase tracking-wider text-emerald-300 font-bold flex items-center justify-center gap-1.5">
+                                  <Check className="w-4 h-4" /> Finding Memorized — You are Sleeping
+                                </div>
+                                <p className="text-xs text-stone-300">
+                                  Rest peacefully until Dawn breaks over the city.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {me.investigations.length > 0 && (
                         <div className="pt-2">
                           <div className="text-xs font-serif-title font-bold uppercase tracking-wider text-[#e5c365] mb-2">
-                            Your Case File
+                            Your Complete Case File
                           </div>
                           <div className="space-y-1.5">
                             {me.investigations.map((inv, idx) => (
@@ -1542,6 +1800,14 @@ export default function MultiDeviceMode({
                         {lastDawnReport.victim.name}&apos;s role was:
                       </div>
                       <RoleBadge roleId={lastDawnReport.victim.role} size="lg" />
+                    </div>
+                  )}
+
+                  {secondsLeft > 0 && (
+                    <div>
+                      <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                        Town Deliberation starts automatically in {secondsLeft}s
+                      </span>
                     </div>
                   )}
 
@@ -1741,6 +2007,14 @@ export default function MultiDeviceMode({
                     </div>
                   )}
 
+                  {secondsLeft > 0 && (
+                    <div>
+                      <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#c6a15b]/15 border border-[#e5c365]/40 text-xs font-serif-title uppercase tracking-widest text-[#e5c365]">
+                        Night falls automatically in {secondsLeft}s
+                      </span>
+                    </div>
+                  )}
+
                   {canControlFlow ? (
                     <button
                       type="button"
@@ -1816,17 +2090,30 @@ export default function MultiDeviceMode({
                   {hideMyRole ? (
                     <ArtDecoCardBack
                       playerName={me.name}
-                      subtitle="Role Hidden (Privacy Shield) — Tap to Flip"
+                      subtitle="Role Hidden for Privacy — Click to Reveal"
+                      buttonLabel="Reveal Role"
+                      compact={true}
                       onClick={() => setHideMyRole(false)}
                     />
                   ) : (
-                    <RoleCard
-                      roleId={me.role}
-                      imageUrl={me.roleImage}
-                      variantIndex={me.roleVariantIndex}
-                      fellowMafia={isMafia ? fellowMafia : []}
-                      compact={true}
-                    />
+                    <div className="space-y-2">
+                      <RoleCard
+                        roleId={me.role}
+                        imageUrl={me.roleImage}
+                        variantIndex={me.roleVariantIndex}
+                        fellowMafia={isMafia ? fellowMafia : []}
+                        compact={true}
+                        onClick={() => setHideMyRole(true)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setHideMyRole(true)}
+                        className="w-full py-2.5 px-3 rounded-xl bg-stone-900 border border-[#c6a15b]/40 hover:border-[#c6a15b] text-xs text-stone-200 hover:text-white font-serif-title uppercase tracking-wider flex items-center justify-center gap-1.5 transition"
+                      >
+                        <EyeOff className="w-3.5 h-3.5 text-rose-400" />
+                        Hide Role
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

@@ -63,6 +63,7 @@ export function advanceToNextNight(room) {
   room.phase = 'NIGHT';
   room.nightActions = {
     mafiaVotes: {},
+    mafiaConfirmed: {},
     doctorTarget: null,
     detectiveTarget: null,
     detectiveSubmitted: false,

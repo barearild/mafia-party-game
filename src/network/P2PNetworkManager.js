@@ -21,7 +21,16 @@ const STORAGE_ROOM_KEY = 'mafia_host_room_state_v1';
 export class P2PNetworkManager {
   constructor({ playerId, playerName, isTvDisplay, onStateUpdate, onError, onStatusChange }) {
     this.playerId = playerId;
-    this.playerName = playerName;
+    let resolvedName = (playerName || '').trim();
+    if ((!resolvedName || resolvedName.toLowerCase() === 'player') && typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('mafia_player_name');
+        if (stored && stored.trim() && stored.trim().toLowerCase() !== 'player') {
+          resolvedName = stored.trim();
+        }
+      } catch {}
+    }
+    this.playerName = resolvedName || (isTvDisplay ? 'Living Room TV' : 'Player');
     this.isTvDisplay = Boolean(isTvDisplay);
     this.onStateUpdate = onStateUpdate;
     this.onError = onError;
@@ -35,6 +44,7 @@ export class P2PNetworkManager {
     this.clientConnections = new Map(); // Only on host: Map<playerId, DataConnection>
     this.destroyed = false;
     this.reconnectTimer = null;
+    this.phaseAutoTimer = null;
     this.hasConnectedOnce = false;
     this.wakeLock = null;
 
@@ -156,7 +166,21 @@ export class P2PNetworkManager {
 
     this.roomCode = code.toUpperCase().trim();
     if (!this.room) {
-      this.room = createInitialRoom(this.roomCode, this.playerId, this.playerName);
+      this.room = createInitialRoom(this.roomCode, this.playerId, this.playerName, this.isTvDisplay);
+      this._saveHostRoomToStorage();
+    } else if (this.isTvDisplay) {
+      const hostPlayer = this.room.players.find((p) => p.id === this.playerId);
+      if (hostPlayer) {
+        hostPlayer.name = this.playerName || 'Living Room TV';
+        hostPlayer.isTvDisplay = true;
+        hostPlayer.isGameMaster = true;
+        hostPlayer.role = 'GAMEMASTER';
+        hostPlayer.ready = true;
+      }
+      this.room.gameMasterId = this.playerId;
+      this.room.settings.gmMode = 'ASSIGNED';
+      this.room.settings.assignedGmPlayerId = this.playerId;
+      syncRoleCountsIfAuto(this.room);
       this._saveHostRoomToStorage();
     }
 
@@ -226,6 +250,21 @@ export class P2PNetworkManager {
     if (saved) {
       this.roomCode = cleanCode;
       this.room = saved;
+      if (this.isTvDisplay) {
+        const hostPlayer = this.room.players.find((p) => p.id === this.playerId);
+        if (hostPlayer) {
+          hostPlayer.name = this.playerName || 'Living Room TV';
+          hostPlayer.isTvDisplay = true;
+          hostPlayer.isGameMaster = true;
+          hostPlayer.role = 'GAMEMASTER';
+          hostPlayer.ready = true;
+        }
+        this.room.gameMasterId = this.playerId;
+        this.room.settings.gmMode = 'ASSIGNED';
+        this.room.settings.assignedGmPlayerId = this.playerId;
+        syncRoleCountsIfAuto(this.room);
+        this._saveHostRoomToStorage();
+      }
       this._broadcastRoom();
     } else {
       return this.createRoom(cleanCode);
@@ -409,8 +448,11 @@ export class P2PNetworkManager {
         const isTv = Boolean(data.isTvDisplay);
         if (existing) {
           existing.connected = true;
-          if (data.playerName && this.room.phase === 'LOBBY') {
-            existing.name = data.playerName.trim();
+          const incomingName = (data.playerName || '').trim();
+          if (incomingName && this.room.phase === 'LOBBY') {
+            if (incomingName.toLowerCase() !== 'player' || existing.name === 'Player') {
+              existing.name = incomingName;
+            }
           }
           if (isTv) {
             existing.isGameMaster = true;
@@ -540,6 +582,19 @@ export class P2PNetworkManager {
         break;
       }
 
+      case 'update_player_name': {
+        if (room.phase !== 'LOBBY') return;
+        const newName = (payload?.name || '').trim().slice(0, 30);
+        if (!newName) return;
+        const player = room.players.find((p) => p.id === senderPlayerId);
+        if (player) {
+          player.name = newName;
+          this._saveHostRoomToStorage();
+          this._broadcastRoom();
+        }
+        break;
+      }
+
       case 'register_tv_gm': {
         const player = room.players.find((p) => p.id === senderPlayerId);
         if (player) {
@@ -602,7 +657,8 @@ export class P2PNetworkManager {
 
       case 'start_game': {
         if (room.phase !== 'LOBBY' || !canControlGameFlow(room, senderPlayerId)) return;
-        const hasHumanGm = room.settings.gmMode && room.settings.gmMode !== 'NONE';
+        const hasTvDisplay = room.players.some((p) => p.isTvDisplay);
+        const hasHumanGm = hasTvDisplay || (room.settings.gmMode && room.settings.gmMode !== 'NONE');
         const minRequired = hasHumanGm ? 5 : 4;
 
         if (room.players.length < minRequired) {
@@ -613,24 +669,33 @@ export class P2PNetworkManager {
           return;
         }
 
-        room.gameMasterId = null;
-        if (room.settings.gmMode === 'ASSIGNED') {
+        // If a TV display exists in the room, it MUST be the Game Master
+        const tvPlayer = room.players.find((p) => p.isTvDisplay);
+        if (tvPlayer) {
+          room.gameMasterId = tvPlayer.id;
+          tvPlayer.isGameMaster = true;
+          tvPlayer.role = 'GAMEMASTER';
+          tvPlayer.ready = true;
+          room.settings.gmMode = 'ASSIGNED';
+          room.settings.assignedGmPlayerId = tvPlayer.id;
+        } else if (room.settings.gmMode === 'ASSIGNED') {
           const targetGm =
             room.players.find((p) => p.id === room.settings.assignedGmPlayerId) ||
-            room.players.find((p) => p.isTvDisplay) ||
             room.players.find((p) => !p.isBot) ||
             room.players[0];
           room.gameMasterId = targetGm ? targetGm.id : null;
         } else if (room.settings.gmMode === 'RANDOM') {
           const humans = room.players.filter((p) => !p.isBot && !p.isTvDisplay);
-          const pool = humans.length > 0 ? humans : room.players.filter((p) => !p.isTvDisplay);
+          const pool = humans.length > 0 ? humans : room.players;
           const drawn = pool[Math.floor(Math.random() * pool.length)];
           room.gameMasterId = drawn ? drawn.id : null;
+        } else {
+          room.gameMasterId = null;
         }
 
         syncRoleCountsIfAuto(room);
         const citizenPlayers = room.players.filter(
-          (p) => p.id !== room.gameMasterId && !p.isGameMaster && p.role !== 'GAMEMASTER'
+          (p) => p.id !== room.gameMasterId && !p.isGameMaster && p.role !== 'GAMEMASTER' && !p.isTvDisplay
         );
 
         const counts = room.settings.roleCounts;
@@ -654,7 +719,7 @@ export class P2PNetworkManager {
 
         let roleIdx = 0;
         room.players.forEach((p) => {
-          if (p.id === room.gameMasterId || p.isGameMaster || p.role === 'GAMEMASTER') {
+          if (p.id === room.gameMasterId || p.isGameMaster || p.role === 'GAMEMASTER' || p.isTvDisplay) {
             p.role = 'GAMEMASTER';
             p.isGameMaster = true;
             p.alive = true;
@@ -688,6 +753,7 @@ export class P2PNetworkManager {
         room.phase = 'ROLE_REVEAL';
 
         this._triggerBotActions();
+        this._handlePhaseChange();
         this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
@@ -707,6 +773,7 @@ export class P2PNetworkManager {
 
       case 'host_force_advance': {
         if (!canControlGameFlow(room, senderPlayerId)) return;
+        this._clearPhaseTimers();
         if (room.phase === 'ROLE_REVEAL') {
           this._startNightPhase();
         } else if (room.phase === 'NIGHT') {
@@ -722,6 +789,7 @@ export class P2PNetworkManager {
         } else if (room.phase === 'VOTE_RESULTS') {
           this._startNightPhase();
         }
+        this._handlePhaseChange();
         this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
@@ -739,17 +807,78 @@ export class P2PNetworkManager {
         if (player.role === 'MAFIA' || player.role === 'GODFATHER') {
           if (target.role === 'MAFIA' || target.role === 'GODFATHER') return;
           room.nightActions.mafiaVotes[player.id] = target.id;
+          if (room.nightActions.mafiaConfirmed) {
+            delete room.nightActions.mafiaConfirmed[player.id];
+          }
         } else if (player.role === 'DOCTOR') {
           if (!room.settings.doctorSelfSave && target.id === player.id) return;
           room.nightActions.doctorTarget = target.id;
-          room.nightActions.doctorSubmitted = true;
+          room.nightActions.doctorSubmitted = false;
         } else if (player.role === 'DETECTIVE') {
-          if (!room.nightActions.detectiveSubmitted && target.id !== player.id) {
-            performDetectiveInvestigation(room, player, target);
+          if (target.id !== player.id) {
+            const alreadyInspected = (player.investigations || []).some(
+              (inv) => inv.round === room.round
+            );
+            if (!alreadyInspected) {
+              performDetectiveInvestigation(room, player, target, false);
+            }
           }
         }
 
         this._checkNightComplete();
+        this._saveHostRoomToStorage();
+        this._broadcastRoom();
+        break;
+      }
+
+      case 'confirm_night_action': {
+        if (room.phase !== 'NIGHT') return;
+        const participants = getActiveParticipants(room);
+        const player = participants.find((p) => p.id === senderPlayerId);
+        if (!player || !player.alive) return;
+
+        if (player.role === 'MAFIA' || player.role === 'GODFATHER') {
+          if (room.nightActions.mafiaVotes[player.id]) {
+            if (!room.nightActions.mafiaConfirmed) room.nightActions.mafiaConfirmed = {};
+            room.nightActions.mafiaConfirmed[player.id] = true;
+          }
+        } else if (player.role === 'DOCTOR') {
+          if (room.nightActions.doctorTarget) {
+            room.nightActions.doctorSubmitted = true;
+          }
+        } else if (player.role === 'DETECTIVE') {
+          if (room.nightActions.detectiveTarget) {
+            room.nightActions.detectiveSubmitted = true;
+          }
+        }
+
+        this._checkNightComplete();
+        this._saveHostRoomToStorage();
+        this._broadcastRoom();
+        break;
+      }
+
+      case 'unconfirm_night_action': {
+        if (room.phase !== 'NIGHT') return;
+        const player = room.players.find((p) => p.id === senderPlayerId);
+        if (!player || !player.alive) return;
+
+        if (player.role === 'MAFIA' || player.role === 'GODFATHER') {
+          if (room.nightActions.mafiaConfirmed) {
+            delete room.nightActions.mafiaConfirmed[player.id];
+          }
+        } else if (player.role === 'DOCTOR') {
+          room.nightActions.doctorSubmitted = false;
+        } else if (player.role === 'DETECTIVE') {
+          room.nightActions.detectiveSubmitted = false;
+        }
+
+        if (this.nightResolveTimer) {
+          clearTimeout(this.nightResolveTimer);
+          this.nightResolveTimer = null;
+          room.phaseExpiresAt = null;
+        }
+
         this._saveHostRoomToStorage();
         this._broadcastRoom();
         break;
@@ -764,10 +893,11 @@ export class P2PNetworkManager {
 
         if (payload.roleId === 'MAFIA') {
           if (target) {
-            // Assign target for all alive mafia
+            if (!room.nightActions.mafiaConfirmed) room.nightActions.mafiaConfirmed = {};
             participants.forEach((m) => {
               if (m.alive && (m.role === 'MAFIA' || m.role === 'GODFATHER')) {
                 room.nightActions.mafiaVotes[m.id] = target.id;
+                room.nightActions.mafiaConfirmed[m.id] = true;
               }
             });
           }
@@ -778,7 +908,7 @@ export class P2PNetworkManager {
           if (target) {
             const detectivePlayer = participants.find((p) => p.alive && p.role === 'DETECTIVE');
             if (detectivePlayer) {
-              performDetectiveInvestigation(room, detectivePlayer, target);
+              performDetectiveInvestigation(room, detectivePlayer, target, true);
             }
           } else {
             room.nightActions.detectiveTarget = null;
@@ -849,18 +979,28 @@ export class P2PNetworkManager {
 
       case 'play_again': {
         if (!canControlGameFlow(room, senderPlayerId)) return;
+        this._clearPhaseTimers();
         room.phase = 'LOBBY';
         room.round = 0;
-        room.gameMasterId = null;
         room.winner = null;
         room.winReason = '';
         room.lastDawnReport = null;
         room.lastVoteReport = null;
+        room.phaseExpiresAt = null;
+        const tvPlayer = room.players.find((p) => p.isTvDisplay);
+        room.gameMasterId = tvPlayer ? tvPlayer.id : null;
         room.players.forEach((p) => {
           p.alive = true;
-          p.role = null;
-          p.ready = p.isBot;
           p.investigations = [];
+          if (p.isTvDisplay) {
+            p.role = 'GAMEMASTER';
+            p.isGameMaster = true;
+            p.ready = true;
+          } else {
+            p.role = null;
+            p.isGameMaster = false;
+            p.ready = p.isBot;
+          }
         });
         this._saveHostRoomToStorage();
         this._broadcastRoom();
@@ -873,12 +1013,99 @@ export class P2PNetworkManager {
   }
 
   // --- INTERNAL HOST HELPERS ---
+  _clearPhaseTimers() {
+    if (this.phaseAutoTimer) {
+      clearTimeout(this.phaseAutoTimer);
+      this.phaseAutoTimer = null;
+    }
+    if (this.nightResolveTimer) {
+      clearTimeout(this.nightResolveTimer);
+      this.nightResolveTimer = null;
+    }
+    if (this.roleRevealAdvanceTimer) {
+      clearTimeout(this.roleRevealAdvanceTimer);
+      this.roleRevealAdvanceTimer = null;
+    }
+  }
+
+  _handlePhaseChange() {
+    if (!this.isHost || !this.room) return;
+    this._clearPhaseTimers();
+    const room = this.room;
+
+    const hasTvOrAuto =
+      room.players.some((p) => p.isTvDisplay) ||
+      room.settings.gmMode === 'NONE' ||
+      Boolean(room.settings.autoProgress);
+
+    if (room.phase === 'DAWN') {
+      if (hasTvOrAuto) {
+        room.phaseExpiresAt = Date.now() + 12000;
+        this.phaseAutoTimer = setTimeout(() => {
+          if (this.room && this.room.phase === 'DAWN') {
+            this.room.phase = 'DAY_DISCUSSION';
+            this._handlePhaseChange();
+            this._saveHostRoomToStorage();
+            this._broadcastRoom();
+          }
+        }, 12000);
+      } else {
+        room.phaseExpiresAt = null;
+      }
+    } else if (room.phase === 'DAY_DISCUSSION') {
+      if (hasTvOrAuto) {
+        const durationMs = 60000;
+        room.phaseExpiresAt = Date.now() + durationMs;
+        this.phaseAutoTimer = setTimeout(() => {
+          if (this.room && this.room.phase === 'DAY_DISCUSSION') {
+            this.room.dayVotes = {};
+            this.room.phase = 'DAY_VOTING';
+            this.room.phaseExpiresAt = null;
+            this._triggerBotActions();
+            this._handlePhaseChange();
+            this._saveHostRoomToStorage();
+            this._broadcastRoom();
+          }
+        }, durationMs);
+      } else {
+        room.phaseExpiresAt = null;
+      }
+    } else if (room.phase === 'DAY_VOTING') {
+      room.phaseExpiresAt = null;
+      this._checkDayVotingComplete();
+    } else if (room.phase === 'VOTE_RESULTS') {
+      if (hasTvOrAuto) {
+        room.phaseExpiresAt = Date.now() + 12000;
+        this.phaseAutoTimer = setTimeout(() => {
+          if (this.room && this.room.phase === 'VOTE_RESULTS') {
+            this._startNightPhase();
+            this._saveHostRoomToStorage();
+            this._broadcastRoom();
+          }
+        }, 12000);
+      } else {
+        room.phaseExpiresAt = null;
+      }
+    } else if (room.phase === 'ROLE_REVEAL') {
+      room.phaseExpiresAt = null;
+      this._checkRoleRevealComplete();
+    } else if (room.phase === 'NIGHT') {
+      room.phaseExpiresAt = null;
+      this._checkNightComplete();
+    } else {
+      room.phaseExpiresAt = null;
+    }
+  }
+
   _startNightPhase() {
+    this._clearPhaseTimers();
     const room = this.room;
     room.phase = 'NIGHT';
     room.round += 1;
+    room.phaseExpiresAt = null;
     room.nightActions = {
       mafiaVotes: {},
+      mafiaConfirmed: {},
       doctorTarget: null,
       detectiveTarget: null,
       detectiveSubmitted: false,
@@ -886,11 +1113,31 @@ export class P2PNetworkManager {
     };
     room.mafiaChat = [];
     this._triggerBotActions();
+    this._handlePhaseChange();
   }
 
   _checkRoleRevealComplete() {
     if (this.room.players.every((p) => p.ready)) {
-      this._startNightPhase();
+      if (!this.roleRevealAdvanceTimer) {
+        this.room.phaseExpiresAt = Date.now() + 2500;
+        this._saveHostRoomToStorage();
+        this._broadcastRoom();
+
+        this.roleRevealAdvanceTimer = setTimeout(() => {
+          this.roleRevealAdvanceTimer = null;
+          if (this.room && this.room.phase === 'ROLE_REVEAL') {
+            this._startNightPhase();
+            this._saveHostRoomToStorage();
+            this._broadcastRoom();
+          }
+        }, 2500);
+      }
+    } else {
+      if (this.roleRevealAdvanceTimer) {
+        clearTimeout(this.roleRevealAdvanceTimer);
+        this.roleRevealAdvanceTimer = null;
+        this.room.phaseExpiresAt = null;
+      }
     }
   }
 
@@ -909,12 +1156,36 @@ export class P2PNetworkManager {
 
     const mafiaDone =
       aliveMafia.length === 0 ||
-      aliveMafia.every((m) => Boolean(room.nightActions.mafiaVotes[m.id]));
-    const doctorDone = !aliveDoctor || room.nightActions.doctorSubmitted;
-    const detectiveDone = !aliveDetective || room.nightActions.detectiveSubmitted;
+      aliveMafia.every(
+        (m) =>
+          Boolean(room.nightActions.mafiaVotes[m.id]) &&
+          Boolean(room.nightActions.mafiaConfirmed?.[m.id])
+      );
+    const doctorDone = !aliveDoctor || Boolean(room.nightActions.doctorSubmitted);
+    const detectiveDone = !aliveDetective || Boolean(room.nightActions.detectiveSubmitted);
 
     if (mafiaDone && doctorDone && detectiveDone) {
-      resolveNightActions(room);
+      if (!this.nightResolveTimer) {
+        room.phaseExpiresAt = Date.now() + 3000;
+        this._saveHostRoomToStorage();
+        this._broadcastRoom();
+
+        this.nightResolveTimer = setTimeout(() => {
+          this.nightResolveTimer = null;
+          if (this.room && this.room.phase === 'NIGHT') {
+            resolveNightActions(this.room);
+            this._handlePhaseChange();
+            this._saveHostRoomToStorage();
+            this._broadcastRoom();
+          }
+        }, 3000);
+      }
+    } else {
+      if (this.nightResolveTimer) {
+        clearTimeout(this.nightResolveTimer);
+        this.nightResolveTimer = null;
+        room.phaseExpiresAt = null;
+      }
     }
   }
 
@@ -926,6 +1197,7 @@ export class P2PNetworkManager {
     const allVoted = alivePlayers.every((p) => Boolean(room.dayVotes[p.id]));
     if (allVoted) {
       resolveDayVoting(room);
+      this._handlePhaseChange();
     }
   }
 
@@ -963,6 +1235,10 @@ export class P2PNetworkManager {
               const target = pool[Math.floor(Math.random() * pool.length)];
               if (target) {
                 room.nightActions.mafiaVotes[bot.id] = target.id;
+                if (!room.nightActions.mafiaConfirmed) {
+                  room.nightActions.mafiaConfirmed = {};
+                }
+                room.nightActions.mafiaConfirmed[bot.id] = true;
               }
             }
           } else if (bot.role === 'DOCTOR' && !room.nightActions.doctorSubmitted) {
@@ -980,7 +1256,7 @@ export class P2PNetworkManager {
             const target =
               candidates[Math.floor(Math.random() * candidates.length)];
             if (target) {
-              performDetectiveInvestigation(room, bot, target);
+              performDetectiveInvestigation(room, bot, target, true);
             }
           }
         });
@@ -1053,6 +1329,7 @@ export class P2PNetworkManager {
 
   destroy() {
     this.destroyed = true;
+    this._clearPhaseTimers();
     if (this._visHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this._visHandler);
     }
