@@ -120,6 +120,7 @@ export default function App() {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [dossierModalTab, setDossierModalTab] = useState('ROLES'); // 'ROLES' | 'RULES'
   const [selectedDossierRole, setSelectedDossierRole] = useState('MAFIA');
+  const [activeHostRoom, setActiveHostRoom] = useState(() => getSavedHostRoomSummary());
   const swipeStartRef = useRef({ x: null, y: null });
 
   useEffect(() => {
@@ -127,6 +128,7 @@ export default function App() {
       if (mode === 'HOME') {
         sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
         localStorage.removeItem(APP_NAV_STORAGE_KEY);
+        setActiveHostRoom(getSavedHostRoomSummary());
       } else {
         const payload = JSON.stringify({
           mode,
@@ -228,6 +230,7 @@ export default function App() {
     setShowRulesModal(false);
     setMode('HOME');
     setMultiAction(null);
+    setActiveHostRoom(getSavedHostRoomSummary());
     try {
       sessionStorage.removeItem(APP_NAV_STORAGE_KEY);
       localStorage.removeItem(APP_NAV_STORAGE_KEY);
@@ -464,55 +467,52 @@ export default function App() {
 
           <div className="space-y-4 pt-2">
             {/* Quick Resume Active Hosted Room if available */}
-            {(() => {
-              const activeHostRoom = getSavedHostRoomSummary();
-              if (!activeHostRoom) return null;
-              return (
-                <div className="p-4 rounded-2xl bg-[#c6a15b]/15 border-2 border-[#e5c365] space-y-2.5 shadow-[0_0_25px_rgba(198,161,91,0.2)]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-serif-title font-bold uppercase tracking-[0.16em] text-[#e5c365] flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-[#c6a15b]" />
-                      Active Game in Progress
-                    </span>
-                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-950 text-[#e5c365] border border-[#c6a15b]/40">
-                      ROOM {activeHostRoom.code}
-                    </span>
-                  </div>
-                  <p className="text-xs text-stone-200">
-                    You have an open game room with <strong className="text-white">{activeHostRoom.playerCount} player{activeHostRoom.playerCount === 1 ? '' : 's'}</strong> ({activeHostRoom.phase === 'LOBBY' ? 'Lobby' : `Round ${activeHostRoom.round}`}).
-                  </p>
-                  <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        enterMultiDevice({
-                          type: 'resume_host',
-                          name: activeHostRoom.hostName,
-                          code: activeHostRoom.code,
-                        });
-                      }}
-                      className="flex-1 py-2.5 px-4 rounded-xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center justify-center gap-2 transition"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      Return to Room {activeHostRoom.code}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        try {
-                          sessionStorage.removeItem(STORAGE_ROOM_KEY);
-                        } catch {}
-                        setMode('HOME');
-                      }}
-                      className="py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider border border-white/10 transition"
-                      title="Discard this hosted room"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
+            {activeHostRoom && (
+              <div className="p-4 rounded-2xl bg-[#c6a15b]/15 border-2 border-[#e5c365] space-y-2.5 shadow-[0_0_25px_rgba(198,161,91,0.2)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-serif-title font-bold uppercase tracking-[0.16em] text-[#e5c365] flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#c6a15b]" />
+                    Active Game in Progress
+                  </span>
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-950 text-[#e5c365] border border-[#c6a15b]/40">
+                    ROOM {activeHostRoom.code}
+                  </span>
                 </div>
-              );
-            })()}
+                <p className="text-xs text-stone-200">
+                  You have an open game room with <strong className="text-white">{activeHostRoom.playerCount} player{activeHostRoom.playerCount === 1 ? '' : 's'}</strong> ({activeHostRoom.phase === 'LOBBY' ? 'Lobby' : `Round ${activeHostRoom.round}`}).
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      enterMultiDevice({
+                        type: 'resume_host',
+                        name: activeHostRoom.hostName,
+                        code: activeHostRoom.code,
+                      });
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center justify-center gap-2 transition"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    Return to Room {activeHostRoom.code}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        sessionStorage.removeItem(STORAGE_ROOM_KEY);
+                        localStorage.removeItem(STORAGE_ROOM_KEY);
+                      } catch {}
+                      setActiveHostRoom(null);
+                    }}
+                    className="py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider border border-white/10 transition"
+                    title="Discard this hosted room"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Host New Room Form */}
             <form
