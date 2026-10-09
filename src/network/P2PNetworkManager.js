@@ -204,10 +204,32 @@ export class P2PNetworkManager {
     });
   }
 
+  resumeHost(code) {
+    this.isHost = true;
+    const cleanCode = (code || '').toUpperCase().trim();
+    const saved = this._loadHostRoomFromStorage(cleanCode);
+    if (saved) {
+      this.roomCode = cleanCode;
+      this.room = saved;
+    } else {
+      return this.createRoom(cleanCode);
+    }
+    this._initHostPeer();
+    return this.roomCode;
+  }
+
   // --- CLIENT SETUP ---
   joinRoom(code) {
+    const cleanCode = (code || '').toUpperCase().trim();
+
+    // Check if WE are actually the host of this room in storage
+    const saved = this._loadHostRoomFromStorage(cleanCode);
+    if (saved && saved.hostId === this.playerId) {
+      return this.resumeHost(cleanCode);
+    }
+
     this.isHost = false;
-    this.roomCode = (code || '').toUpperCase().trim();
+    this.roomCode = cleanCode;
     this._connectAsClient();
   }
 

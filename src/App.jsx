@@ -442,7 +442,7 @@ export default function App() {
                       type="button"
                       onClick={() => {
                         enterMultiDevice({
-                          type: 'join',
+                          type: 'resume_host',
                           name: activeHostRoom.hostName,
                           code: activeHostRoom.code,
                         });

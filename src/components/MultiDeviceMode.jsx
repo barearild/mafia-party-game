@@ -100,11 +100,13 @@ export default function MultiDeviceMode({
     });
     networkRef.current = net;
 
-    if (action?.type === 'create') {
+    if (action?.type === 'resume_host') {
+      net.resumeHost(action.code);
+    } else if (action?.type === 'create') {
       const roomCode = net.createRoom();
       if (onUpdateAction) {
         onUpdateAction({
-          type: 'join',
+          type: 'resume_host',
           code: roomCode,
           name: action.name || 'Host',
         });
