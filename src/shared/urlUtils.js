@@ -131,3 +131,12 @@ export function setGameUrl({ roomCode = null, isTv = false, mode = 'HOME', repla
     console.warn('Failed to update game URL:', err);
   }
 }
+
+export function getRoomJoinUrl(roomCode) {
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://mafia-syndicate-game.netlify.app';
+  const path = formatGamePath({ roomCode });
+  return `${origin}${path}`;
+}

@@ -14,6 +14,7 @@ import {
   BOT_NAMES,
   assignAlternatingRoleImages,
 } from '../shared/roles.js';
+import { startLanHostBeacon } from './networkDiscovery.js';
 
 const ROOM_PEER_PREFIX = 'mafia-room-v1-';
 const STORAGE_ROOM_KEY = 'mafia_host_room_state_v1';
@@ -47,6 +48,7 @@ export class P2PNetworkManager {
     this.phaseAutoTimer = null;
     this.hasConnectedOnce = false;
     this.wakeLock = null;
+    this.lanBeacon = null;
 
     this._setupVisibilityHandler();
     this._requestWakeLock();
@@ -214,6 +216,21 @@ export class P2PNetworkManager {
     this.peer.on('open', () => {
       this.onStatusChange(`Host ready`);
       this._broadcastRoom();
+    });
+
+    if (this.lanBeacon) {
+      try { this.lanBeacon.stop(); } catch {}
+      this.lanBeacon = null;
+    }
+    this.lanBeacon = startLanHostBeacon({
+      roomCode: this.roomCode,
+      getRoomInfo: () => ({
+        code: this.roomCode,
+        hostName: this.playerName,
+        playerCount: this.room ? this.room.players.length : 1,
+        phase: this.room ? this.room.phase : 'LOBBY',
+        isTv: this.isTvDisplay,
+      }),
     });
 
     this.peer.on('connection', (conn) => {
@@ -1325,11 +1342,23 @@ export class P2PNetworkManager {
         });
       }
     });
+
+    if (this.lanBeacon) {
+      try {
+        this.lanBeacon.update();
+      } catch {}
+    }
   }
 
   destroy() {
     this.destroyed = true;
     this._clearPhaseTimers();
+    if (this.lanBeacon) {
+      try {
+        this.lanBeacon.stop();
+      } catch {}
+      this.lanBeacon = null;
+    }
     if (this._visHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this._visHandler);
     }

@@ -12,9 +12,12 @@ import {
   Play,
   Trash2,
   RotateCcw,
+  QrCode,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { P2PNetworkManager } from '../network/P2PNetworkManager.js';
 import { ROLES } from '../shared/roles.js';
+import { getRoomJoinUrl } from '../shared/urlUtils.js';
 
 function getOrCreateTvPlayerId() {
   let id =
@@ -228,40 +231,69 @@ export default function TvTheaterMode({
               </p>
             </div>
 
-            {/* Players Joined Wall */}
-            <div className="p-6 rounded-3xl deco-panel space-y-4 max-w-3xl mx-auto w-full">
-              <div className="flex items-center justify-between border-b border-[#c6a15b]/20 pb-2 text-xs font-serif-title font-bold uppercase tracking-[0.2em] text-[#e5c365]">
-                <span>Citizens in the Parlor ({livingCitizens.length})</span>
-                <span className="text-[11px] text-stone-400 font-normal">Need 4+ to start</span>
+            {/* Players Joined Wall + QR Code Card */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-5xl mx-auto w-full items-start">
+              {/* QR Code Scanner Card */}
+              <div className="lg:col-span-4 p-6 rounded-3xl deco-panel flex flex-col items-center text-center space-y-3.5 shadow-[0_0_35px_rgba(198,161,91,0.2)]">
+                <div className="text-xs font-serif-title uppercase tracking-[0.2em] text-[#e5c365] font-black flex items-center justify-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-[#c6a15b]" />
+                  Scan to Take a Seat
+                </div>
+                <div className="bg-white p-3 rounded-2xl shadow-2xl border-2 border-[#e5c365]">
+                  <QRCodeSVG
+                    value={getRoomJoinUrl(code)}
+                    size={170}
+                    bgColor="#ffffff"
+                    fgColor="#0c0a09"
+                    level="M"
+                    includeMargin={false}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-stone-300">
+                    Point your camera at this code to join instantly
+                  </p>
+                  <p className="font-mono text-[11px] text-[#c6a15b] truncate max-w-[220px]">
+                    {getRoomJoinUrl(code)}
+                  </p>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-3 min-h-[70px]">
-                {livingCitizens.length === 0 ? (
-                  <p className="text-sm text-stone-400 italic">Waiting for players to join with PIN {code}...</p>
-                ) : (
-                  livingCitizens.map((p) => (
-                    <div
-                      key={p.id}
-                      className="px-5 py-2.5 rounded-2xl bg-stone-950/90 border border-[#c6a15b]/40 text-[#f5efe2] font-serif-title font-bold text-sm sm:text-base shadow-[0_0_15px_rgba(0,0,0,0.6)] flex items-center gap-2"
-                    >
-                      <span>{p.name}</span>
-                      {p.isBot && <span className="text-[10px] text-stone-400 font-mono">(AI)</span>}
-                      {p.isBot && canControlFlow && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDispatch('remove_player', {
-                              targetPlayerId: p.id,
-                            })
-                          }
-                          className="text-stone-400 hover:text-rose-400 p-0.5 ml-1 transition"
-                          title="Remove AI Bot"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
+
+              {/* Players Joined Wall */}
+              <div className="lg:col-span-8 p-6 rounded-3xl deco-panel space-y-4 w-full">
+                <div className="flex items-center justify-between border-b border-[#c6a15b]/20 pb-2 text-xs font-serif-title font-bold uppercase tracking-[0.2em] text-[#e5c365]">
+                  <span>Citizens in the Parlor ({livingCitizens.length})</span>
+                  <span className="text-[11px] text-stone-400 font-normal">Need 4+ to start</span>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-3 min-h-[140px] p-2">
+                  {livingCitizens.length === 0 ? (
+                    <p className="text-sm text-stone-400 italic">Waiting for players to join with PIN {code} or QR scan...</p>
+                  ) : (
+                    livingCitizens.map((p) => (
+                      <div
+                        key={p.id}
+                        className="px-5 py-2.5 rounded-2xl bg-stone-950/90 border border-[#c6a15b]/40 text-[#f5efe2] font-serif-title font-bold text-sm sm:text-base shadow-[0_0_15px_rgba(0,0,0,0.6)] flex items-center gap-2"
+                      >
+                        <span>{p.name}</span>
+                        {p.isBot && <span className="text-[10px] text-stone-400 font-mono">(AI)</span>}
+                        {p.isBot && canControlFlow && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDispatch('remove_player', {
+                                targetPlayerId: p.id,
+                              })
+                            }
+                            className="text-stone-400 hover:text-rose-400 p-0.5 ml-1 transition"
+                            title="Remove AI Bot"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 

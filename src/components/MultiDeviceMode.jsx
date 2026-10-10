@@ -32,7 +32,10 @@ import {
   Tv,
   Sparkles,
   Edit2,
+  QrCode,
+  X,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import confetti from 'canvas-confetti';
 import { ROLES } from '../shared/roles.js';
 import {
@@ -42,7 +45,7 @@ import {
   ArtDecoCardBack,
 } from './RoleBadge.jsx';
 import TvTheaterMode from './TvTheaterMode.jsx';
-import { setGameUrl } from '../shared/urlUtils.js';
+import { setGameUrl, getRoomJoinUrl } from '../shared/urlUtils.js';
 
 function getOrCreatePlayerId() {
   let id =
@@ -68,6 +71,7 @@ export default function MultiDeviceMode({
   const [statusMsg, setStatusMsg] = useState('Connecting to Room...');
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [hideMyRole, setHideMyRole] = useState(true);
   const [chatInput, setChatInput] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -563,6 +567,16 @@ export default function MultiDeviceMode({
                       Share Room Link
                     </>
                   )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-[#c6a15b]/40 text-[#e5c365] font-serif-title font-bold text-xs uppercase tracking-widest transition shadow-sm"
+                  title="Display QR Code for other players to scan and join"
+                >
+                  <QrCode className="w-4 h-4 text-[#c6a15b]" />
+                  Show QR Code
                 </button>
 
                 <button
@@ -2229,6 +2243,54 @@ export default function MultiDeviceMode({
           </div>
         )}
       </main>
+
+      {/* QR Code Modal for Easy Player Onboarding */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-sm rounded-3xl deco-panel p-6 sm:p-8 flex flex-col items-center text-center space-y-4 shadow-[0_0_50px_rgba(198,161,91,0.3)] border-2 border-[#e5c365]">
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-stone-400 hover:text-white bg-stone-900/80 hover:bg-stone-800 border border-white/10 transition"
+              title="Close QR Code"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="text-xs font-serif-title uppercase tracking-[0.2em] text-[#e5c365] font-black flex items-center gap-1.5">
+              <QrCode className="w-4 h-4 text-[#c6a15b]" />
+              Scan to Join Room
+            </div>
+            <div className="bg-white p-3.5 rounded-2xl shadow-2xl border-2 border-[#e5c365]">
+              <QRCodeSVG
+                value={getRoomJoinUrl(code)}
+                size={200}
+                bgColor="#ffffff"
+                fgColor="#0c0a09"
+                level="M"
+                includeMargin={false}
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-2xl font-serif-title font-black text-[#e5c365] tracking-widest">
+                ROOM {code}
+              </div>
+              <p className="text-xs text-stone-300">
+                Point any phone camera at this screen to join instantly.
+              </p>
+              <p className="font-mono text-[10px] text-stone-400 truncate max-w-[240px] mx-auto">
+                {getRoomJoinUrl(code)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="w-full py-2.5 rounded-xl deco-gold-btn font-serif-title font-black text-xs uppercase tracking-widest"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

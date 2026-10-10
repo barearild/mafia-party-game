@@ -9,6 +9,7 @@ import {
   RotateCcw,
   X,
   Tv,
+  Wifi,
 } from 'lucide-react';
 import { ROLES } from './shared/roles.js';
 import { ArtDecoCardBack, RoleCard } from './components/RoleBadge.jsx';
@@ -16,6 +17,7 @@ import SingleDeviceMode from './components/SingleDeviceMode.jsx';
 import MultiDeviceMode from './components/MultiDeviceMode.jsx';
 import TvTheaterMode from './components/TvTheaterMode.jsx';
 import { parseGameUrl, setGameUrl } from './shared/urlUtils.js';
+import { scanForLocalRooms } from './network/networkDiscovery.js';
 
 const APP_NAV_STORAGE_KEY = 'mafia_app_nav_v1';
 const SINGLE_DEVICE_STORAGE_KEY = 'mafia_single_device_state_v1';
@@ -121,7 +123,26 @@ export default function App() {
   const [dossierModalTab, setDossierModalTab] = useState('ROLES'); // 'ROLES' | 'RULES'
   const [selectedDossierRole, setSelectedDossierRole] = useState('MAFIA');
   const [activeHostRoom, setActiveHostRoom] = useState(() => getSavedHostRoomSummary());
+  const [discoveredLanRoom, setDiscoveredLanRoom] = useState(null);
   const swipeStartRef = useRef({ x: null, y: null });
+
+  // Auto-scan for active game rooms on the same Wi-Fi / network when on the Home screen
+  useEffect(() => {
+    if (mode !== 'HOME') {
+      setDiscoveredLanRoom(null);
+      return;
+    }
+
+    const scanner = scanForLocalRooms({
+      onFound: (room) => {
+        setDiscoveredLanRoom(room);
+      },
+    });
+
+    return () => {
+      scanner.stop();
+    };
+  }, [mode]);
 
   useEffect(() => {
     try {
@@ -537,6 +558,47 @@ export default function App() {
                     }}
                     className="py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider border border-white/10 transition"
                     title="Discard this hosted room"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Join Banner: Game Auto-Detected on your Wi-Fi */}
+            {discoveredLanRoom && (!activeHostRoom || activeHostRoom.code !== discoveredLanRoom.code) && (
+              <div className="p-4 rounded-2xl bg-emerald-950/40 border-2 border-emerald-500/70 space-y-2.5 shadow-[0_0_25px_rgba(16,185,129,0.25)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-serif-title font-bold uppercase tracking-[0.16em] text-emerald-400 flex items-center gap-1.5">
+                    <Wifi className="w-4 h-4 text-emerald-400" />
+                    Game Found on Your Wi-Fi
+                  </span>
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-950 text-emerald-300 border border-emerald-500/40">
+                    ROOM {discoveredLanRoom.code}
+                  </span>
+                </div>
+                <p className="text-xs text-stone-200">
+                  Hosted by <strong className="text-white">{discoveredLanRoom.hostName}</strong> with <strong className="text-white">{discoveredLanRoom.playerCount} player{discoveredLanRoom.playerCount === 1 ? '' : 's'}</strong> ({discoveredLanRoom.phase === 'LOBBY' ? 'In Lobby' : 'Active Game'}).
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      enterMultiDevice({
+                        type: 'join',
+                        name: joinName || 'Player',
+                        code: discoveredLanRoom.code,
+                      });
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-stone-950 font-serif-title font-black text-xs uppercase tracking-widest inline-flex items-center justify-center gap-2 transition shadow-lg"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    Quick Join Room {discoveredLanRoom.code}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscoveredLanRoom(null)}
+                    className="py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 text-xs font-serif-title uppercase tracking-wider border border-white/10 transition"
                   >
                     Dismiss
                   </button>
